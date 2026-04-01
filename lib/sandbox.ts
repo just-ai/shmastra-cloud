@@ -104,7 +104,9 @@ async function ensureSandboxAppRunning(sandbox: Sandbox) {
 }
 
 async function provisionSandbox(userId: string) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
+  const domain = process.env.VERCEL_URL ?? "localhost:3000";
+  const protocol = domain.startsWith("localhost") ? "http" : "https";
+  const appUrl = `${protocol}://${domain}`;
 
   try {
     const virtualKey = await getOrCreateVirtualKey(userId);
