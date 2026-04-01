@@ -1,0 +1,32 @@
+{
+  "name": "shmastra-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build:studio": "vite build --config studio-build/vite.config.js",
+    "build": "npm run build:studio && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "template:build": "node --experimental-strip-types scripts/build-e2b-template.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "@workos-inc/authkit-nextjs": "^3.0.0",
+    "@workos-inc/node": "^7.36.0",
+    "dotenv": "^17.3.1",
+    "e2b": "^2.18.0",
+    "next": "^16.2.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.4",
+    "mastra": "^1.3.16",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.4"
+  }
+}
