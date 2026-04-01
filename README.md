@@ -2,7 +2,25 @@
 
 [Shmastra](https://github.com/just-ai/shmastra) in the E2B cloud.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fjust-ai%2Fshmastra-cloud&project-name=shmastra-cloud&repository-name=shmastra-cloud&env=WORKOS_API_KEY&env=WORKOS_CLIENT_ID&env=WORKOS_COOKIE_PASSWORD&env=E2B_API_KEY&env=SUPABASE_URL&env=SUPABASE_SERVICE_ROLE_KEY&env=OPENAI_API_KEY&env=ANTHROPIC_API_KEY&env=GOOGLE_GENERATIVE_AI_API_KEY&env=COMPOSIO_API_KEY&env=WORKOS_ORGANIZATION_ID)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fjust-ai%2Fshmastra-cloud&project-name=shmastra-cloud&repository-name=shmastra-cloud&envDescription=See%20README%20for%20the%20full%20list%20of%20required%20environment%20variables&envLink=https%3A%2F%2Fgithub.com%2Fjust-ai%2Fshmastra-cloud%23environment-variables)
+
+## Environment variables
+
+Add these to **Vercel → Settings → Environment Variables** (or fill in during deploy):
+
+| Variable | Description |
+|---|---|
+| `WORKOS_API_KEY` | WorkOS API key (`sk_...`) |
+| `WORKOS_CLIENT_ID` | WorkOS client ID (`client_...`) |
+| `WORKOS_ORGANIZATION_ID` | WorkOS organization ID (`org_...`) |
+| `WORKOS_COOKIE_PASSWORD` | Random string, min 32 chars |
+| `E2B_API_KEY` | E2B API key |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Google Generative AI key |
+| `COMPOSIO_API_KEY` | Composio API key |
 
 ## One-time before production
 
