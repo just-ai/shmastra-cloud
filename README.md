@@ -15,7 +15,7 @@ system that keeps real API keys out of the sandbox entirely.
 
 - **Framework**: Next.js 15 (App Router), TypeScript, deployed on Vercel
 - **Auth**: WorkOS AuthKit (`@workos-inc/authkit-nextjs`, `@workos-inc/node`) —
-  Magic Auth (email OTP), domain restricted to `just-ai.com`
+  Magic Auth (email OTP)
 - **Sandbox**: E2B (`e2b` latest) — one sandbox per user, hibernates on inactivity
 - **Database**: Supabase (Postgres) — stores user profiles, sandbox metadata,
   virtual keys
@@ -93,6 +93,7 @@ NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
 WORKOS_API_KEY=sk_...
 WORKOS_CLIENT_ID=client_...
 WORKOS_COOKIE_PASSWORD=<min 32 chars random string>
+WORKOS_ORGANIZATION_ID=org_... # optional: allow sign-in only for this org
 NEXT_PUBLIC_WORKOS_REDIRECT_URI=https://your-app.vercel.app/api/auth/callback
 
 # E2B
@@ -195,16 +196,11 @@ buffering. The `X-Accel-Buffering: no` header disables Vercel/nginx
 buffering. This is critical for SSE streams from OpenAI and Anthropic
 streaming responses, which Studio uses for live agent output.
 
-### 6. Auth: WorkOS Magic Auth (Email OTP), domain restricted
+### 6. Auth: WorkOS Magic Auth (Email OTP)
 
 Authentication uses WorkOS AuthKit with **Magic Auth** (email one-time code).
 No passwords.
 
-- WorkOS is configured with an Organization that has `just-ai.com` as a
-  verified domain. The domain policy ensures only `@just-ai.com` emails can
-  authenticate.
-- Additionally, the backend validates the email domain before sending the OTP
-  as a second layer of protection.
 - The login page is a custom modern UI with an email input field. After
   submitting the email, the user enters the OTP code received via email.
 - WorkOS AuthKit handles the OTP sending, verification, and session
@@ -357,7 +353,7 @@ the sandbox.
 
 ### 1. Login page (`app/login/page.tsx`)
 Modern UI with:
-- Email input field (validates `@just-ai.com` domain on the client)
+- Email input field
 - OTP code input (shown after email submission)
 - WorkOS AuthKit Magic Auth integration
 - Redirect to `/studio` after successful auth (or to sandbox setup screen
@@ -368,11 +364,8 @@ Redirect authenticated users to `/studio`, unauthenticated to `/login`.
 
 ### 3. WorkOS AuthKit integration
 - Configure Magic Auth in the WorkOS Dashboard.
-- Create Organization with verified domain `just-ai.com`.
 - Set up `@workos-inc/authkit-nextjs`: callback route, middleware,
   `AuthKitProvider`, `WORKOS_COOKIE_PASSWORD`.
-- Backend email domain validation as a second layer on top of WorkOS domain
-  policy.
 
 ### 4. Supabase setup
 - Create Supabase project.
@@ -465,5 +458,4 @@ public/studio/
   identity without a session cookie.
 - Real API keys never leave the Next.js server — they exist only in Vercel
   environment variables and are substituted in-memory during the proxy request.
-- Only `@just-ai.com` email addresses can authenticate (enforced by WorkOS
-  domain policy + backend validation).
+- Authentication is handled through WorkOS Magic Auth with email OTP.

@@ -28,7 +28,7 @@ const template = Template({ fileContextPath: scriptDir })
   .makeDir(appDir)
   .runCmd(`echo "cache:${cacheBuster}"`)
   .gitClone("https://github.com/just-ai/shmastra", appDir)
-  .runCmd(`cd ${appDir} && pnpm install`)
+  .runCmd(`cd ${appDir} && pnpm install && pnpm run init-workdir`)
   .copy("start.sh", startScriptPath)
   .runCmd(`chmod +x ${startScriptPath}`)
   .setWorkdir(appDir);
@@ -39,7 +39,7 @@ async function main() {
 
   const buildInfo = await Template.build(template, "shmastra", {
     onBuildLogs: defaultBuildLogger(),
-    cpuCount: 2,
+    cpuCount: 4,
     memoryMB: 4096,
   });
 

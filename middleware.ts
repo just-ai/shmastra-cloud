@@ -4,6 +4,7 @@ import {
   authkit,
   handleAuthkitHeaders,
 } from "@workos-inc/authkit-nextjs";
+import { isAllowedWorkosOrganization } from "@/lib/workos-organization";
 
 let _supabase: SupabaseClient | undefined;
 
@@ -47,9 +48,32 @@ async function needsWorkspaceBootstrap(workosId: string) {
 }
 
 export default async function middleware(request: NextRequest) {
-  const { session, headers } = await authkit(request);
+  const redirectUri = new URL("/api/auth/callback", request.url).toString();
+  const { session, headers } = await authkit(request, { redirectUri });
   const { pathname, search } = request.nextUrl;
   const acceptsHtml = request.headers.get("accept")?.includes("text/html");
+  const isLogoutPath = pathname === "/api/auth/logout";
+
+  if (
+    !isLogoutPath &&
+    session.user &&
+    !isAllowedWorkosOrganization(session.organizationId)
+  ) {
+    console.warn("[WorkOS organization denied] Session organization is not allowed.", {
+      userId: session.user.id,
+      organizationId: session.organizationId ?? null,
+      pathname,
+    });
+
+    if (!acceptsHtml) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    const logoutUrl = new URL("/api/auth/logout", request.url);
+    logoutUrl.searchParams.set("returnTo", "/");
+
+    return handleAuthkitHeaders(request, headers, { redirect: logoutUrl });
+  }
 
   if (
     acceptsHtml &&
@@ -57,7 +81,7 @@ export default async function middleware(request: NextRequest) {
     !pathname.startsWith("/studio/assets")
   ) {
     if (!session.user) {
-      const loginUrl = new URL("/login", request.url);
+      const loginUrl = new URL("/", request.url);
       return handleAuthkitHeaders(request, headers, { redirect: loginUrl });
     }
 

@@ -13,10 +13,14 @@ const studioSrc = resolve(__dirname, "../node_modules/mastra/dist/studio");
 const studioDest = resolve(__dirname, "../public/studio");
 const keepaliveSrc = resolve(__dirname, "keepalive.js");
 const keepaliveDest = resolve(studioDest, "keepalive.js");
+const logoutButtonSrc = resolve(__dirname, "logout-button.js");
+const logoutButtonDest = resolve(studioDest, "logout-button.js");
 const shmastraScriptTag =
   '<script src="/shmastra/public/script/shmastra.js"></script>';
 const keepaliveScriptTag =
   '<script src="/studio/keepalive.js" defer></script>';
+const logoutButtonScriptTag =
+  '<script src="/studio/logout-button.js" defer></script>';
 
 export default defineConfig({
   plugins: [
@@ -33,6 +37,7 @@ export default defineConfig({
         // Copy all studio assets to public/studio
         cpSync(studioSrc, studioDest, { recursive: true });
         cpSync(keepaliveSrc, keepaliveDest);
+        cpSync(logoutButtonSrc, logoutButtonDest);
 
         // Replace %%PLACEHOLDER%% patterns in index.html
         const indexPath = resolve(studioDest, "index.html");
@@ -54,6 +59,12 @@ export default defineConfig({
             html = html.includes("</body>")
               ? html.replace("</body>", `  ${keepaliveScriptTag}\n</body>`)
               : `${html}\n${keepaliveScriptTag}\n`;
+          }
+
+          if (!html.includes(logoutButtonScriptTag)) {
+            html = html.includes("</body>")
+              ? html.replace("</body>", `  ${logoutButtonScriptTag}\n</body>`)
+              : `${html}\n${logoutButtonScriptTag}\n`;
           }
 
           writeFileSync(indexPath, html);

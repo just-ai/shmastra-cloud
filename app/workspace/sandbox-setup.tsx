@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from "react";
 
+const SHMASTRA_CAPABILITIES = [
+  "Vibe-code agents and workflows right inside Mastra Studio.",
+  "Discover tools, MCP servers, and integrations without leaving the chat flow.",
+  "Iterate on prompts, tools, and multi-agent behavior without local setup.",
+  "Stay in the browser while Shmastra prepares the workspace around your ideas.",
+];
+
 export function SandboxSetup({
   error: initialError,
   returnTo = "/studio",
@@ -11,6 +18,7 @@ export function SandboxSetup({
 }) {
   const [status, setStatus] = useState(initialError ? "error" : "creating");
   const [errorMessage, setErrorMessage] = useState(initialError || "");
+  const [capabilityIndex, setCapabilityIndex] = useState(0);
 
   useEffect(() => {
     if (status !== "creating") return;
@@ -55,6 +63,18 @@ export function SandboxSetup({
     };
   }, [returnTo, status]);
 
+  useEffect(() => {
+    if (status !== "creating") return;
+
+    const intervalId = window.setInterval(() => {
+      setCapabilityIndex((current) => (current + 1) % SHMASTRA_CAPABILITIES.length);
+    }, 4200);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [status]);
+
   async function handleRetry() {
     setStatus("creating");
     setErrorMessage("");
@@ -62,97 +82,42 @@ export function SandboxSetup({
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>Shmastra Cloud</h1>
-
+    <main className="screen-grid flex min-h-screen items-center justify-center px-6 py-10">
+      <section className="flex w-full max-w-3xl flex-col items-center text-center">
         {status === "creating" && (
-          <>
-            <div style={styles.spinner} />
-            <p style={styles.text}>Setting up your environment...</p>
-            <p style={styles.subtext}>This may take up to a minute</p>
-          </>
+          <div className="w-full max-w-2xl text-left">
+            <div className="flex items-center gap-3">
+              <span className="status-dot h-1.5 w-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_16px_rgba(135,247,166,0.7)]" />
+              <div className="shimmer-text text-[10px] uppercase tracking-[0.34em] text-transparent">
+                preparing shmastra workspace
+              </div>
+            </div>
+            <p className="mt-8 max-w-2xl text-2xl font-medium leading-10 tracking-[-0.06em] text-[var(--text-primary)] transition duration-700 sm:text-[32px]">
+              {SHMASTRA_CAPABILITIES[capabilityIndex]}
+            </p>
+            <p className="mt-4 text-[11px] uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
+              studio opens automatically when everything is ready
+            </p>
+          </div>
         )}
 
         {status === "error" && (
-          <>
-            <p style={styles.errorText}>
-              Something went wrong: {errorMessage}
+          <div className="w-full max-w-md rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-bg)] px-6 py-7 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_24px_80px_rgba(0,0,0,0.35)] backdrop-blur">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-[#ff8f8f]">
+              workspace error
+            </div>
+            <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
+              We could not prepare your Shmastra workspace yet: {errorMessage}
             </p>
-            <button onClick={handleRetry} style={styles.button}>
-              Retry
+            <button
+              onClick={handleRetry}
+              className="mt-6 inline-flex h-10 items-center justify-center rounded-md border border-[var(--panel-border-strong)] bg-white/4 px-4 text-xs font-medium tracking-[0.02em] text-white transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+            >
+              Retry workspace launch
             </button>
-          </>
+          </div>
         )}
-      </div>
-
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-    </div>
+      </section>
+    </main>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%)",
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  },
-  card: {
-    background: "#1e1e3a",
-    borderRadius: "16px",
-    padding: "48px",
-    width: "100%",
-    maxWidth: "420px",
-    textAlign: "center" as const,
-    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
-    border: "1px solid rgba(255, 255, 255, 0.08)",
-  },
-  title: {
-    color: "#fff",
-    fontSize: "28px",
-    fontWeight: 700,
-    margin: "0 0 24px",
-  },
-  spinner: {
-    width: "40px",
-    height: "40px",
-    border: "3px solid rgba(255, 255, 255, 0.1)",
-    borderTop: "3px solid #8b5cf6",
-    borderRadius: "50%",
-    animation: "spin 1s linear infinite",
-    margin: "0 auto 16px",
-  },
-  text: {
-    color: "#fff",
-    fontSize: "16px",
-    margin: "0 0 8px",
-  },
-  subtext: {
-    color: "#9e9ec0",
-    fontSize: "13px",
-    margin: 0,
-  },
-  errorText: {
-    color: "#ff6b6b",
-    fontSize: "14px",
-    margin: "0 0 16px",
-  },
-  button: {
-    padding: "12px 24px",
-    borderRadius: "10px",
-    border: "none",
-    background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-    color: "#fff",
-    fontSize: "15px",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-};
