@@ -7,7 +7,20 @@ import { config } from "dotenv";
 config({ path: resolve(__dirname, "../.env.local") });
 config({ path: resolve(__dirname, "../.env") });
 
-const studioEnv = { ...process.env };
+// Build-time defaults for MASTRA_* variables (same as next.config.ts env)
+const mastraDefaults = {
+  MASTRA_API_PREFIX: "/api/mastra",
+  MASTRA_STUDIO_BASE_PATH: "/studio",
+  MASTRA_AUTO_DETECT_URL: "true",
+  MASTRA_TELEMETRY_DISABLED: "true",
+  MASTRA_HIDE_CLOUD_CTA: "true",
+  MASTRA_TEMPLATES: "false",
+  MASTRA_CLOUD_API_ENDPOINT: "",
+  MASTRA_EXPERIMENTAL_FEATURES: "false",
+  MASTRA_REQUEST_CONTEXT_PRESETS: "",
+};
+
+const studioEnv = { ...mastraDefaults, ...process.env };
 
 const studioSrc = resolve(__dirname, "../node_modules/mastra/dist/studio");
 const studioDest = resolve(__dirname, "../public/studio");
