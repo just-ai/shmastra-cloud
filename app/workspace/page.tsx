@@ -1,11 +1,8 @@
+import { redirect } from "next/navigation";
 import { withAuth } from "@workos-inc/authkit-nextjs";
 import { after } from "next/server";
-import { createUserWithId, getUserByWorkosId, upsertUser } from "@/lib/db";
-import {
-  claimPoolSandboxForUser,
-  ensureSandboxForUser,
-  replenishPool,
-} from "@/lib/sandbox";
+import { getSandbox, upsertUser } from "@/lib/db";
+import { ensureSandboxForUser } from "@/lib/sandbox";
 import { SandboxSetup } from "./sandbox-setup";
 
 type WorkspacePageProps = {
@@ -22,21 +19,22 @@ export default async function WorkspacePage({
   const resolvedSearchParams = (await searchParams) ?? {};
   const returnTo = resolvedSearchParams.returnTo || "/studio";
 
-  const existingUser = await getUserByWorkosId(user.id);
+  const userId = await upsertUser(user.id, user.email);
+  const sandbox = await getSandbox(userId);
 
-  if (!existingUser) {
-    // New user — try to claim a pool sandbox
-    const poolSandbox = await claimPoolSandboxForUser();
-
-    if (poolSandbox) {
-      await createUserWithId(poolSandbox.user_id, user.id, user.email);
-      after(replenishPool());
-      return <SandboxSetup returnTo={returnTo} />;
-    }
+  if (!sandbox) {
+    after(ensureSandboxForUser(userId));
+    return <SandboxSetup returnTo={returnTo} />;
   }
 
-  // Existing user without sandbox, or no pool sandbox available
-  const userId = existingUser?.id ?? await upsertUser(user.id, user.email);
-  after(ensureSandboxForUser(userId));
-  return <SandboxSetup returnTo={returnTo} />;
+  if (sandbox.status === "error") {
+    after(ensureSandboxForUser(userId));
+    return <SandboxSetup returnTo={returnTo} />;
+  }
+
+  if (sandbox.status === "creating") {
+    return <SandboxSetup returnTo={returnTo} />;
+  }
+
+  redirect(returnTo);
 }

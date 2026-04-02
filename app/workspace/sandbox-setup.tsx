@@ -24,7 +24,7 @@ export function SandboxSetup({
     if (status !== "creating") return;
 
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout>;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const poll = async () => {
       try {
@@ -45,16 +45,21 @@ export function SandboxSetup({
         }
       } catch {
         if (cancelled) return;
+        // Ignore fetch errors and retry after the current attempt settles.
       }
 
-      timeoutId = setTimeout(poll, 2000);
+      if (!cancelled) {
+        timeoutId = setTimeout(poll, 2000);
+      }
     };
 
-    timeoutId = setTimeout(poll, 2000);
+    void poll();
 
     return () => {
       cancelled = true;
-      clearTimeout(timeoutId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     };
   }, [returnTo, status]);
 
