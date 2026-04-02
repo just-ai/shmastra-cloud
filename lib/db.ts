@@ -110,7 +110,7 @@ export async function countPoolSandboxes() {
     .from("sandboxes")
     .select("*", { count: "exact", head: true })
     .eq("claimed", false)
-    .in("status", ["creating", "ready"]);
+    .not("sandbox_id", "is", null);
   if (error) throw error;
   return count ?? 0;
 }
@@ -120,7 +120,6 @@ export async function claimPoolSandbox() {
     .from("sandboxes")
     .select("id")
     .eq("claimed", false)
-    .in("status", ["ready", "creating"])
     .not("sandbox_id", "is", null)
     .order("created_at", { ascending: true })
     .limit(1)
@@ -130,7 +129,7 @@ export async function claimPoolSandbox() {
 
   const { data, error } = await db()
     .from("sandboxes")
-    .update({ claimed: true, status: "creating", updated_at: new Date().toISOString() })
+    .update({ claimed: true, updated_at: new Date().toISOString() })
     .eq("id", row.id)
     .select()
     .single();

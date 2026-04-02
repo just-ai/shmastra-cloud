@@ -19,33 +19,25 @@ function db() {
   return _supabase;
 }
 
-async function needsWorkspaceBootstrap(workosId: string) {
+async function needsWorkspaceSetup(workosId: string) {
   const { data: user, error: userError } = await db()
     .from("users")
     .select("id")
     .eq("workos_id", workosId)
     .maybeSingle();
 
-  if (userError) {
-    throw userError;
-  }
-
-  if (!user) {
-    return true;
-  }
+  if (userError) throw userError;
+  if (!user) return true;
 
   const { data: sandbox, error: sandboxError } = await db()
     .from("sandboxes")
-    .select("sandbox_id, status")
+    .select("sandbox_id")
     .eq("user_id", user.id)
     .eq("claimed", true)
     .maybeSingle();
 
-  if (sandboxError) {
-    throw sandboxError;
-  }
-
-  return !sandbox || sandbox.status !== "ready" || !sandbox.sandbox_id;
+  if (sandboxError) throw sandboxError;
+  return !sandbox || !sandbox.sandbox_id;
 }
 
 export default async function middleware(request: NextRequest) {
@@ -86,7 +78,7 @@ export default async function middleware(request: NextRequest) {
       return handleAuthkitHeaders(request, headers, { redirect: loginUrl });
     }
 
-    if (await needsWorkspaceBootstrap(session.user.id)) {
+    if (await needsWorkspaceSetup(session.user.id)) {
       const workspaceUrl = new URL("/workspace", request.url);
       workspaceUrl.searchParams.set("returnTo", `${pathname}${search}`);
       return handleAuthkitHeaders(request, headers, { redirect: workspaceUrl });

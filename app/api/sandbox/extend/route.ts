@@ -22,7 +22,7 @@ export async function GET() {
   }
 
   const sandbox = await getSandboxForUser(user.id);
-  if (!sandbox || sandbox.status !== "ready" || !sandbox.sandbox_id) {
+  if (!sandbox || !sandbox.sandbox_id) {
     return json({ error: "Sandbox not ready" }, 503);
   }
 

@@ -1,8 +1,7 @@
-import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { withAuth } from "@workos-inc/authkit-nextjs";
-import { getUserByWorkosId, getSandbox, updateSandbox } from "@/lib/db";
-import { ensureSandboxForUser, isSandboxReady } from "@/lib/sandbox";
+import { getUserByWorkosId, getSandbox } from "@/lib/db";
+import { isSandboxReady } from "@/lib/sandbox";
 
 export async function GET() {
   let session;
@@ -14,33 +13,21 @@ export async function GET() {
 
   const user = await getUserByWorkosId(session.user.id);
   if (!user) {
-    return NextResponse.json({ status: "no_user" });
+    return NextResponse.json({ status: "creating" });
   }
 
-  let sandbox = await getSandbox(user.id);
-  if (!sandbox) {
-    after(ensureSandboxForUser(user.id));
+  const sandbox = await getSandbox(user.id);
+  if (!sandbox || !sandbox.sandbox_host) {
     return NextResponse.json({ status: "creating" });
   }
 
   if (sandbox.status === "error") {
-    sandbox = await ensureSandboxForUser(user.id);
+    return NextResponse.json({
+      status: "error",
+      errorMessage: sandbox.error_message,
+    });
   }
 
-  if (sandbox.status === "creating" && sandbox.sandbox_host) {
-    const alive = await isSandboxReady(sandbox.sandbox_host);
-    if (alive) {
-      await updateSandbox(user.id, {
-        status: "ready",
-        error_message: null,
-      });
-
-      return NextResponse.json({ status: "ready" });
-    }
-  }
-
-  return NextResponse.json({
-    status: sandbox.status,
-    errorMessage: sandbox.error_message,
-  });
+  const alive = await isSandboxReady(sandbox.sandbox_host);
+  return NextResponse.json({ status: alive ? "ready" : "creating" });
 }

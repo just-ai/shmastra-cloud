@@ -30,7 +30,7 @@ async function handler(request: NextRequest): Promise<Response> {
     return json({ error: "Sandbox is being recreated" }, 503);
   }
 
-  if (sandbox.status !== "ready" || !sandbox.sandbox_id || !sandbox.sandbox_host) {
+  if (!sandbox.sandbox_id || !sandbox.sandbox_host) {
     return json({ error: "Sandbox not ready" }, 503);
   }
 

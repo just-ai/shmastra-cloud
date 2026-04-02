@@ -66,11 +66,7 @@ async function handleProxy(request: Request) {
     });
   }
 
-  if (
-    sandbox.status !== "ready" ||
-    !sandbox.sandbox_id ||
-    !sandbox.sandbox_host
-  ) {
+  if (!sandbox.sandbox_id || !sandbox.sandbox_host) {
     return new Response(JSON.stringify({ error: "Sandbox not ready" }), {
       status: 503,
       headers: { "content-type": "application/json" },
