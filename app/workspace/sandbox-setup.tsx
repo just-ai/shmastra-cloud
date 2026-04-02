@@ -23,28 +23,39 @@ export function SandboxSetup({
   useEffect(() => {
     if (status !== "creating") return;
 
-    const intervalId = setInterval(async () => {
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
       try {
         const res = await fetch("/api/sandbox/status", { cache: "no-store" });
         const data = await res.json();
 
+        if (cancelled) return;
+
         if (data.status === "ready") {
-          clearInterval(intervalId);
           window.location.href = returnTo;
           return;
         }
 
         if (data.status === "error") {
-          clearInterval(intervalId);
           setStatus("error");
           setErrorMessage(data.errorMessage || "Unknown error");
+          return;
         }
       } catch {
-        // Ignore fetch errors and retry on next interval.
+        if (cancelled) return;
       }
-    }, 2000);
 
-    return () => clearInterval(intervalId);
+      timeoutId = setTimeout(poll, 2000);
+    };
+
+    timeoutId = setTimeout(poll, 2000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [returnTo, status]);
 
   useEffect(() => {

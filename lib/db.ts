@@ -120,7 +120,8 @@ export async function claimPoolSandbox() {
     .from("sandboxes")
     .select("id")
     .eq("claimed", false)
-    .eq("status", "ready")
+    .in("status", ["ready", "creating"])
+    .not("sandbox_id", "is", null)
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();

@@ -13,7 +13,7 @@ import {
 } from "./db";
 
 const TEMPLATE = "shmastra";
-const SANDBOX_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const APP_PORT = 4111;
 const PROBE_TIMEOUT_MS = 3000;
 const READY_ENDPOINT = "/api/auth/me";
