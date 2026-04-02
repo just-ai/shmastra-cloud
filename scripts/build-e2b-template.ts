@@ -24,14 +24,17 @@ const template = Template({ fileContextPath: scriptDir })
   .aptInstall(["curl", "git", "python3", "python3-pip"])
   .runCmd("pip3 install --break-system-packages 'markitdown[all]'", { user: "root" })
   .runCmd("npm install -g pnpm", { user: "root" })
-  .runCmd("npx -y playwright@latest install --with-deps chromium", { user: "root" })
-  .makeDir(appDir)
-  .runCmd(`echo "cache:${cacheBuster}"`)
-  .gitClone("https://github.com/just-ai/shmastra", appDir)
-  .runCmd(`cd ${appDir} && pnpm install && pnpm run init-workdir`)
   .copy("start.sh", startScriptPath)
   .runCmd(`chmod +x ${startScriptPath}`)
-  .setWorkdir(appDir);
+  .makeDir(appDir)
+  .setWorkdir(appDir)
+  .runCmd(`echo "cache:${cacheBuster}"`)
+  .gitClone("https://github.com/just-ai/shmastra", appDir)
+  .runCmd(`pnpm install`)
+  .runCmd(`npm install -g @executeautomation/playwright-mcp-server`, { user: "root" })
+  .runCmd(`npx -y playwright@1.57.0 install-deps chromium-headless-shell`, { user: "root" })
+  .runCmd(`pnpm run install-browsers`)
+  .runCmd(`pnpm run init-workdir`);
 
 async function main() {
   console.log("Building E2B template 'shmastra'...");
