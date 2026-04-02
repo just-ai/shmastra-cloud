@@ -38,6 +38,7 @@ async function needsWorkspaceBootstrap(workosId: string) {
     .from("sandboxes")
     .select("sandbox_id, status")
     .eq("user_id", user.id)
+    .eq("claimed", true)
     .maybeSingle();
 
   if (sandboxError) {

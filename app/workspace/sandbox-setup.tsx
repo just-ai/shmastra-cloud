@@ -23,44 +23,28 @@ export function SandboxSetup({
   useEffect(() => {
     if (status !== "creating") return;
 
-    let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-    const poll = async () => {
+    const intervalId = setInterval(async () => {
       try {
         const res = await fetch("/api/sandbox/status", { cache: "no-store" });
         const data = await res.json();
 
-        if (cancelled) return;
-
         if (data.status === "ready") {
+          clearInterval(intervalId);
           window.location.href = returnTo;
           return;
         }
 
         if (data.status === "error") {
+          clearInterval(intervalId);
           setStatus("error");
           setErrorMessage(data.errorMessage || "Unknown error");
-          return;
         }
       } catch {
-        if (cancelled) return;
-        // Ignore fetch errors and retry after the current attempt settles.
+        // Ignore fetch errors and retry on next interval.
       }
+    }, 2000);
 
-      if (!cancelled) {
-        timeoutId = setTimeout(poll, 2000);
-      }
-    };
-
-    void poll();
-
-    return () => {
-      cancelled = true;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    };
+    return () => clearInterval(intervalId);
   }, [returnTo, status]);
 
   useEffect(() => {
