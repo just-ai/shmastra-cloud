@@ -144,7 +144,7 @@ function buildSandboxEnvs(userId: string, virtualKey: string) {
 
 // --- Pool sandbox provisioning ---
 
-const POOL_SIZE = 3;
+const POOL_SIZE = 0;
 
 /**
  * Ensure the pool has POOL_SIZE sandboxes (creating or ready).
