@@ -183,19 +183,10 @@ export async function provisionPoolSandbox() {
     await updateSandboxById(record.id, {
       sandbox_id: sandbox.sandboxId,
       sandbox_host: getSandboxHost(sandbox),
-      status: "creating",
       error_message: null,
     });
 
-    const sandboxHost = await ensureSandboxAppRunning(sandbox);
-
-    await updateSandboxById(record.id, {
-      sandbox_host: sandboxHost,
-      status: "ready",
-      error_message: null,
-    });
-
-    console.log(`Pool sandbox ready: ${sandbox.sandboxId} (user_id=${sandboxUserId})`);
+    console.log(`Pool sandbox provisioned: ${sandbox.sandboxId} (user_id=${sandboxUserId})`);
   } catch (err) {
     console.error("Failed to create pool sandbox:", err);
     await updateSandboxById(record.id, {
