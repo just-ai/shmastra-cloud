@@ -91,7 +91,7 @@ async function ensureSandboxAppRunning(sandbox: Sandbox) {
     await sandbox.commands.run(`git pull && pnpm install`);
 
     console.log(`Running sandbox [${sandbox.sandboxId}] ${sandboxHost}`);
-    await sandbox.commands.run("pnpm dev >> /home/user/shmastra.log 2>&1 &", {
+    await sandbox.commands.run("/home/user/start.sh &", {
       background: false,
     });
 

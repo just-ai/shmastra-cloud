@@ -36,3 +36,59 @@ npm run dev
 ```
 
 Production build (same as Vercel): `npm run build` (`build:studio` + `next build`). Routes that use E2B must stay on the **Node** runtime—do not move them to Edge.
+
+# Sandbox Management Scripts
+
+## update.mts
+
+Updates E2B sandboxes to the latest `origin/main`. Handles merge conflicts automatically — simple config files (package.json, tsconfig.json) via Claude API, source code via Mastra agent.
+
+### Prerequisites
+
+Required env vars in `.env.local`:
+
+```
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+E2B_API_KEY=...
+ANTHROPIC_API_KEY=...
+```
+
+### CLI — single sandbox
+
+```bash
+npx tsx scripts/update.mts <sandbox_id>
+```
+
+### CLI — all sandboxes (sequential)
+
+```bash
+npx tsx scripts/update.mts
+```
+
+### Web UI — all sandboxes (parallel)
+
+```bash
+npx tsx scripts/update.mts --serve       # http://localhost:3737
+npx tsx scripts/update.mts --serve 8080  # custom port
+```
+
+Open the URL in a browser. You'll see a table of all sandboxes with status badges. Click **Update All** to update everything in parallel, or click **Update** on individual rows. Click a row to open a side panel with real-time logs.
+
+### How it works
+
+1. Connects to the sandbox, commits any local user changes
+2. Fetches `origin/main` and checks how many commits behind
+3. Creates a git worktree and merges `origin/main` there (dev server keeps running)
+4. Resolves conflicts if any (lockfiles are deleted and regenerated, config files via Claude API, source files via Mastra agent)
+5. Runs `pnpm install` and `pnpm build` in the worktree to verify
+6. Stops the dev server, fast-forwards main to the worktree branch
+7. Cleans up and restarts pm2
+
+## Other scripts
+
+- **build-e2b-template.ts** — builds the E2B sandbox template with pm2 and project dependencies
+- **ecosystem.config.cjs** — pm2 process config for the dev server
+- **start.sh** — startup script (pm2 + log rotation)
+- **list-sandboxes.mjs** — lists all sandbox IDs from Supabase
+- **update-sandboxes.mjs** — legacy simple update script (stash/pull/pop)

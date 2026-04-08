@@ -1,12 +1,12 @@
 #!/bin/bash
 set -e
 
-cd "/home/user/shmastra"
+# Start app via pm2 ecosystem config
+pm2 start /home/user/ecosystem.config.cjs
 
-# Manual helper for starting the app inside a running sandbox.
-pnpm dev &
+# Configure log rotation (pm2-logrotate installed at build time)
+pm2 set pm2-logrotate:max_size 5M
+pm2 set pm2-logrotate:retain 5
+pm2 set pm2-logrotate:compress true
 
-echo "Mastra server is starting on port 4111..."
-
-# Keep the process alive
-wait
+echo "Shmastra server is starting"
