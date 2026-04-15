@@ -21,10 +21,4 @@ create table if not exists sandboxes (
   updated_at    timestamptz default now()
 );
 
--- Virtual keys table
-create table if not exists virtual_keys (
-  id            uuid primary key default gen_random_uuid(),
-  user_id       uuid unique references users(id) on delete cascade,
-  virtual_key   text unique not null,
-  created_at    timestamptz default now()
-);
+-- Virtual key lives on the users table (added in migration 005)

@@ -3,10 +3,11 @@ import {
   claimSandboxRetry,
   createSandboxRecord,
   getSandbox,
+  getUserById,
   markSandboxCreating,
   updateSandbox,
 } from "./db";
-import { getOrCreateVirtualKey } from "./virtual-keys";
+import { getVirtualKey } from "./virtual-keys";
 
 const TEMPLATE = "shmastra";
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -87,9 +88,6 @@ async function ensureSandboxAppRunning(sandbox: Sandbox) {
   const appProcessRunning = processes.some(isAppProcessRunning);
 
   if (!appProcessRunning) {
-    console.log(`Updating sandbox [${sandbox.sandboxId}]`);
-    await sandbox.commands.run(`git pull && pnpm install`);
-
     console.log(`Running sandbox [${sandbox.sandboxId}] ${sandboxHost}`);
     await sandbox.commands.run("/home/user/start.sh &", {
       background: false,
@@ -109,7 +107,9 @@ async function provisionSandbox(userId: string) {
   const appUrl = `${protocol}://${domain}`;
 
   try {
-    const virtualKey = await getOrCreateVirtualKey(userId);
+    const user = await getUserById(userId);
+    if (!user) throw new Error(`User ${userId} not found`);
+    const virtualKey = getVirtualKey(user);
 
     const sandbox = await Sandbox.create(TEMPLATE, {
       timeoutMs: SANDBOX_TIMEOUT_MS,
@@ -120,6 +120,8 @@ async function provisionSandbox(userId: string) {
       envs: {
         MASTRA_STUDIO_BASE_PATH: "/studio",
         MASTRA_API_PREFIX: "/api/mastra",
+        MASTRA_AUTH_TOKEN: virtualKey,
+        CORS_ORIGIN: appUrl,
         USER_ID: userId,
         OPENAI_API_KEY: virtualKey,
         ANTHROPIC_API_KEY: virtualKey,
@@ -134,11 +136,19 @@ async function provisionSandbox(userId: string) {
       },
     });
 
+    // Read template version to skip already-applied patches
+    let version: string | null = null;
+    try {
+      const v = await sandbox.files.read("/home/user/.template-version");
+      version = v.trim() || null;
+    } catch {}
+
     await updateSandbox(userId, {
       sandbox_id: sandbox.sandboxId,
       sandbox_host: getSandboxHost(sandbox),
       status: "creating",
       error_message: null,
+      version,
     });
 
     const sandboxHost = await ensureSandboxAppRunning(sandbox);
@@ -154,13 +164,6 @@ async function provisionSandbox(userId: string) {
       status: "error",
       error_message: err instanceof Error ? err.message : "Unknown error",
     });
-  }
-}
-
-export async function createSandboxForUser(userId: string) {
-  const { created } = await createSandboxRecord(userId);
-  if (created) {
-    await provisionSandbox(userId);
   }
 }
 
