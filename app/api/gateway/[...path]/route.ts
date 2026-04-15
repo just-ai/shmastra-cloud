@@ -1,7 +1,31 @@
 import { NextRequest } from "next/server";
+import { after } from "next/server";
 import { resolveVirtualKey } from "@/lib/virtual-keys";
+import { getSandboxExtendInfo, updateLastExtendedAt } from "@/lib/db";
+import { extendSandboxTimeout } from "@/lib/sandbox";
 
-export const runtime = "edge";
+export const maxDuration = 120; // 2 minuteы
+
+const EXTEND_INTERVAL_MS = 60_000; // 1 minute
+
+async function maybeExtendSandbox(userId: string) {
+  try {
+    const info = await getSandboxExtendInfo(userId);
+    if (!info?.sandbox_id) return;
+
+    if (info.last_extended_at) {
+      const elapsed = Date.now() - new Date(info.last_extended_at).getTime();
+      if (elapsed < EXTEND_INTERVAL_MS) return;
+    }
+
+    await Promise.all([
+      updateLastExtendedAt(userId),
+      extendSandboxTimeout(info.sandbox_id),
+    ]);
+  } catch (err) {
+    console.error("Failed to extend sandbox:", err);
+  }
+}
 
 const PROVIDER_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
@@ -66,6 +90,8 @@ async function handler(request: NextRequest): Promise<Response> {
       headers.set(name, value.split(virtualKey).join(realKey));
     }
   }
+
+  after(maybeExtendSandbox(resolved.userId));
 
   const upstream = await fetch(url.toString(), {
     method: request.method,

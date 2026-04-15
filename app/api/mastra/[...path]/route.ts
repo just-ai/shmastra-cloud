@@ -7,8 +7,6 @@ import {
 } from "@/lib/sandbox";
 import { getUserByWorkosId } from "@/lib/db";
 
-export const runtime = "nodejs";
-
 function json(data: unknown, status: number): Response {
   return Response.json(data, { status });
 }

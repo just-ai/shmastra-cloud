@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  ...(process.env.VERCEL_URL && { allowedDevOrigins: [process.env.VERCEL_URL] }),
   env: {
     MASTRA_API_PREFIX: "/api/mastra",
     MASTRA_STUDIO_BASE_PATH: "/studio",
@@ -14,12 +15,8 @@ const nextConfig: NextConfig = {
   },
   rewrites: async () => [
     {
-      source: "/studio",
-      destination: "/studio/index.html",
-    },
-    {
       source: "/studio/:path((?!_next|assets|favicon).*)",
-      destination: "/studio/index.html",
+      destination: "/studio",
       has: [
         {
           type: "header",

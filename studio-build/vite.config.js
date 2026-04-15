@@ -9,14 +9,18 @@ config({ path: resolve(__dirname, "../.env") });
 
 // Build-time defaults for MASTRA_* variables (same as next.config.ts env)
 const mastraDefaults = {
+  MASTRA_SERVER_HOST: "__SANDBOX_HOST__",
+  MASTRA_SERVER_PORT: "443",
+  MASTRA_SERVER_PROTOCOL: "https",
   MASTRA_API_PREFIX: "/api/mastra",
   MASTRA_STUDIO_BASE_PATH: "/studio",
-  MASTRA_AUTO_DETECT_URL: "true",
+  MASTRA_AUTO_DETECT_URL: "false",
   MASTRA_TELEMETRY_DISABLED: "true",
   MASTRA_HIDE_CLOUD_CTA: "true",
   MASTRA_TEMPLATES: "false",
   MASTRA_CLOUD_API_ENDPOINT: "",
   MASTRA_EXPERIMENTAL_FEATURES: "false",
+  MASTRA_THEME_TOGGLE: "true",
   MASTRA_REQUEST_CONTEXT_PRESETS: "",
 };
 
@@ -28,6 +32,8 @@ const keepaliveSrc = resolve(__dirname, "keepalive.js");
 const keepaliveDest = resolve(studioDest, "keepalive.js");
 const logoutButtonSrc = resolve(__dirname, "logout-button.js");
 const logoutButtonDest = resolve(studioDest, "logout-button.js");
+const authFetchSrc = resolve(__dirname, "auth-fetch.js");
+const authFetchDest = resolve(studioDest, "auth-fetch.js");
 const shmastraScriptTag =
   '<script src="/shmastra/public/script/shmastra.js"></script>';
 const keepaliveScriptTag =
@@ -51,6 +57,7 @@ export default defineConfig({
         cpSync(studioSrc, studioDest, { recursive: true });
         cpSync(keepaliveSrc, keepaliveDest);
         cpSync(logoutButtonSrc, logoutButtonDest);
+        cpSync(authFetchSrc, authFetchDest);
 
         // Replace %%PLACEHOLDER%% patterns in index.html
         const indexPath = resolve(studioDest, "index.html");
@@ -61,6 +68,13 @@ export default defineConfig({
           html = html.replace(/%%([A-Z_]+)%%/g, (match, key) => {
             return studioEnv[key] || "";
           });
+
+          // Inject __MASTRA_AUTH_TOKEN__ variable and auth-fetch script
+          html = html.replace(
+            "window.MASTRA_SERVER_HOST",
+            "window.MASTRA_AUTH_TOKEN = '__MASTRA_AUTH_TOKEN__';\n      window.MASTRA_SERVER_HOST",
+          );
+          html = html.replace("</head>", '  <script src="/studio/auth-fetch.js"></script>\n</head>');
 
           if (!html.includes(shmastraScriptTag)) {
             html = html.includes("</body>")

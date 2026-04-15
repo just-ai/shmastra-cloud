@@ -5,8 +5,7 @@ import {
   getSandboxForUser,
 } from "@/lib/sandbox";
 import { getUserByWorkosId } from "@/lib/db";
-
-export const runtime = "nodejs";
+import { getVirtualKey } from "@/lib/virtual-keys";
 
 function buildSandboxRequestHeaders(request: Request) {
   const headers = new Headers(request.headers);
@@ -82,6 +81,7 @@ async function handleProxy(request: Request) {
   upstreamUrl.search = requestUrl.search;
 
   const headers = buildSandboxRequestHeaders(request);
+  headers.set("x-mastra-auth-token", getVirtualKey(user));
   const body = await getForwardBody(request, request.method);
 
   let upstream;
