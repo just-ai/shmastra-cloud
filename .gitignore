@@ -37,3 +37,5 @@ public/studio/
 .e2b-template/
 /.idea/
 *.iml
+.claude/settings.local.json
+supabase/.temp/
