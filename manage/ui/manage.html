@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shmastra Sandbox Manager</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@19?dev",
+        "react-dom/client": "https://esm.sh/react-dom@19/client?dev",
+        "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime?dev",
+        "marked": "https://esm.sh/marked@15",
+        "highlight.js/core": "https://esm.sh/highlight.js@11/lib/core",
+        "highlight.js/lib/languages/javascript": "https://esm.sh/highlight.js@11/lib/languages/javascript",
+        "highlight.js/lib/languages/typescript": "https://esm.sh/highlight.js@11/lib/languages/typescript",
+        "highlight.js/lib/languages/json": "https://esm.sh/highlight.js@11/lib/languages/json",
+        "highlight.js/lib/languages/css": "https://esm.sh/highlight.js@11/lib/languages/css",
+        "highlight.js/lib/languages/xml": "https://esm.sh/highlight.js@11/lib/languages/xml",
+        "highlight.js/lib/languages/bash": "https://esm.sh/highlight.js@11/lib/languages/bash",
+        "highlight.js/lib/languages/markdown": "https://esm.sh/highlight.js@11/lib/languages/markdown",
+        "highlight.js/lib/languages/yaml": "https://esm.sh/highlight.js@11/lib/languages/yaml",
+        "highlight.js/lib/languages/sql": "https://esm.sh/highlight.js@11/lib/languages/sql",
+        "highlight.js/lib/languages/python": "https://esm.sh/highlight.js@11/lib/languages/python"
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="https://esm.sh/highlight.js@11/styles/github-dark-dimmed.min.css" />
+  <link rel="stylesheet" href="/manage.css" />
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module">
+    import { createElement as h } from "react";
+    import { createRoot } from "react-dom/client";
+    import { App } from "/ui/app.js";
+    createRoot(document.getElementById("root")).render(h(App));
+  </script>
+</body>
+</html>
