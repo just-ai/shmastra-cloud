@@ -1,4 +1,4 @@
-import type { UpdateContext } from "@/manage/runner.mjs";
+import type { UpdateContext } from "@/manage/update/runner.mjs";
 
 export default async function ({ sandbox, run, log, supabase }: UpdateContext) {
   const sandboxId = sandbox.sandboxId;

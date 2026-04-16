@@ -1,4 +1,4 @@
-import type { UpdateContext } from "@/manage/runner.mjs";
+import type { UpdateContext } from "@/manage/update/runner.mjs";
 
 export default async function ({ run, log }: UpdateContext) {
   log("Installing sqlite3...");

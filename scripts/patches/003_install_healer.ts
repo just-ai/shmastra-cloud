@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import type { UpdateContext } from "@/manage/runner.mjs";
+import type { UpdateContext } from "@/manage/update/runner.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SANDBOX_DIR = resolve(__dirname, "../sandbox");
