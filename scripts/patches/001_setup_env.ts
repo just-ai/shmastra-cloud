@@ -18,7 +18,7 @@ export default async function ({ sandbox, run, log, supabase }: UpdateContext) {
   if (userErr) throw userErr;
 
   const virtualKey = userData.virtual_key;
-  const corsOrigin = "https://shmastra.vercel.app";
+  const corsOrigin = `https://${process.env.VERCEL_URL}`;
 
   log(`Setting CORS_ORIGIN=${corsOrigin}, MASTRA_AUTH_TOKEN=${virtualKey.slice(0, 10)}...`);
 
