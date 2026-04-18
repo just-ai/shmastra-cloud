@@ -46,6 +46,7 @@ function json(data: unknown, status: number): Response {
 }
 
 async function handler(request: NextRequest): Promise<Response> {
+  console.log("Gateway called, headers:", Object.fromEntries(request.headers.entries()));
   // Parse /api/gateway/:provider/...rest
   const { pathname, search } = new URL(request.url);
   const match = pathname.match(/^\/api\/gateway\/([^/]+)(\/.*)?$/);
