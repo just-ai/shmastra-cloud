@@ -1,9 +1,27 @@
 import { createElement as h } from "react";
 
-export function Header({ search, setSearch, filtered, total, reloadSandboxes, anyRunning, stopAll, updateAll }) {
+export function Header({ search, setSearch, filtered, total, reloadSandboxes, anyRunning, stopAll, updateAll, envProfile, envProfiles, envFiles, envSwitching, switchEnv }) {
   return h("div", {
     style: { display: "flex", alignItems: "center", gap: "10px", marginBottom: "24px" },
   },
+    // ── Env profile switcher ──
+    envProfile && h("select", {
+      value: envProfile,
+      disabled: envSwitching || !envProfiles || envProfiles.length <= 1,
+      onChange: (e) => switchEnv(e.target.value),
+      "data-tooltip-id": "tt", "data-tooltip-content": envFiles ? envFiles.join(" > ") : "",
+      style: {
+        background: "var(--bg-2)", color: "var(--text-1)",
+        border: "1px solid var(--border)", borderRadius: "4px",
+        padding: "3px 6px", fontSize: "12px", height: "24px",
+        fontFamily: "'JetBrains Mono', monospace",
+        cursor: envProfiles && envProfiles.length > 1 ? "pointer" : "default",
+        outline: "none", flexShrink: 0,
+        opacity: envSwitching ? 0.5 : 1,
+      },
+    },
+      (envProfiles || []).map((p) => h("option", { key: p, value: p }, p)),
+    ),
     h("input", {
       type: "text",
       placeholder: "Search by email or sandbox id...",
@@ -27,7 +45,7 @@ export function Header({ search, setSearch, filtered, total, reloadSandboxes, an
     }, filtered + " / " + total),
     h("button", {
       onClick: reloadSandboxes,
-      title: "Reload sandboxes",
+      "data-tooltip-id": "tt", "data-tooltip-content": "Reload sandboxes",
       style: {
         width: "24px", height: "24px", borderRadius: "4px",
         border: "1px solid var(--border)", background: "var(--bg-2)",

@@ -1,8 +1,7 @@
-import { Sandbox } from "e2b";
 import { Agent } from "@mastra/core/agent";
 import { Workspace } from "@mastra/core/workspace";
 import { E2BSandbox } from "@mastra/e2b";
-import type { SandboxInstance } from "../sandbox.mjs";
+import { connectSandbox, type SandboxInstance } from "../sandbox.mjs";
 import {Memory} from "@mastra/memory";
 import {LibSQLStore} from "@mastra/libsql";
 import {PrefillErrorHandler} from "@mastra/core/processors";
@@ -43,7 +42,7 @@ export async function getOrCreateSession(sandboxId: string): Promise<AgentSessio
     return existing;
   }
 
-  const sandbox = await Sandbox.connect(sandboxId, { timeoutMs: 10 * 60 * 1000 });
+  const sandbox = await connectSandbox(sandboxId, { timeoutMs: 10 * 60 * 1000 });
 
   const e2bSandbox = new E2BSandbox({ id: sandboxId });
   (e2bSandbox as any)._sandbox = sandbox;
@@ -84,6 +83,7 @@ export async function getOrCreateSession(sandboxId: string): Promise<AgentSessio
 export async function streamMessage(sandboxId: string, message: string) {
   const session = await getOrCreateSession(sandboxId);
   return session.agent.stream(message, {
+    maxSteps: 100,
     memory: {
       thread: sandboxId,
       resource: sandboxId,

@@ -31,7 +31,7 @@ const PATCHES_DIR = resolve(__dirname, "../../scripts/patches");
 function makeRunFn(sandbox: SandboxInstance, log: LogFn): RunFn {
   return async (cmd, { timeoutMs = 120_000, throwOnError = true } = {}) => {
     log(`$ ${cmd}`);
-    const result = await sandbox.commands.run(cmd, { timeoutMs });
+    const result = await sandbox.commands.run(cmd, { timeoutMs, user: "user" });
     if (result.stdout.trim()) log(`  stdout: ${result.stdout.trim()}`);
     if (result.stderr.trim()) log(`  stderr: ${result.stderr.trim()}`);
     if (result.exitCode !== 0 && throwOnError) {

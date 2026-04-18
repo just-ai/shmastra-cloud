@@ -1,17 +1,12 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { readBody, json, sseHeaders, sseWrite, connectSandbox } from "./helpers.mjs";
+import type { Request, Response } from "express";
+import { sseHeaders, sseWrite, connectSandbox } from "./helpers.mjs";
 
-export async function handleExec(req: IncomingMessage, res: ServerResponse, sandboxId: string) {
-  let body: any;
-  try {
-    body = JSON.parse(await readBody(req));
-  } catch {
-    return json(res, { error: "Invalid JSON" }, 400);
-  }
-
-  const command = body?.command;
+export async function handleExec(req: Request, res: Response) {
+  const sandboxId = req.params.sandboxId as string;
+  const command = req.body?.command;
   if (!command || typeof command !== "string") {
-    return json(res, { error: "command is required" }, 400);
+    res.status(400).json({ error: "command is required" });
+    return;
   }
 
   sseHeaders(res);
@@ -19,7 +14,7 @@ export async function handleExec(req: IncomingMessage, res: ServerResponse, sand
 
   try {
     const sandbox = await connectSandbox(sandboxId);
-    const result = await sandbox.commands.run(command, { timeoutMs: 120_000 });
+    const result = await sandbox.commands.run(command, { timeoutMs: 120_000, user: "user" });
     if (result.stdout) write("stdout", { text: result.stdout });
     if (result.stderr) write("stderr", { text: result.stderr });
     write("exit", { code: result.exitCode });

@@ -12,7 +12,7 @@ async function getConflictedFiles(sandbox: SandboxInstance, workdir: string, log
 }
 
 async function readSandboxFile(sandbox: SandboxInstance, filePath: string) {
-  const result = await sandbox.commands.run(`cat "${filePath}"`, { timeoutMs: 10_000 });
+  const result = await sandbox.commands.run(`cat "${filePath}"`, { timeoutMs: 10_000, user: "user" });
   return result.stdout;
 }
 
@@ -182,7 +182,7 @@ export async function resolveConflicts(sandbox: SandboxInstance, workdir: string
       if (!resolved) {
         throw new Error(`Claude returned empty resolution for ${file}`);
       }
-      await sandbox.files.write(fullPath, resolved);
+      await sandbox.files.write(fullPath, resolved, { user: "user" });
       await run(sandbox, `git -C "${workdir}" add "${file}"`, log, { throwOnError: false });
       log(`✓ Resolved ${file} (Claude API)`);
       continue;

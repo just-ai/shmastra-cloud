@@ -1,12 +1,10 @@
-import type { ServerResponse } from "node:http";
+import type { Request, Response } from "express";
 import { fetchSandboxes, type LogFn } from "../sandbox.mjs";
 import { updateSandbox, UPDATE_PHASES } from "../update/updater.mjs";
-import { json } from "./helpers.mjs";
 
 // ── SSE broadcast ──
 
-type SSEClient = ServerResponse;
-const sseClients = new Set<SSEClient>();
+const sseClients = new Set<Response>();
 
 export function broadcast(event: string, data: unknown) {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -24,7 +22,7 @@ function makeSandboxLog(sandboxId: string): LogFn {
 
 // ── Route handlers ──
 
-export function handleEvents(res: ServerResponse, onClose: () => void) {
+export function handleEvents(req: Request, res: Response) {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -32,24 +30,25 @@ export function handleEvents(res: ServerResponse, onClose: () => void) {
   });
   res.write(":\n\n");
   sseClients.add(res);
-  onClose(() => sseClients.delete(res));
+  req.on("close", () => sseClients.delete(res));
 }
 
-export async function handleListSandboxes(res: ServerResponse) {
+export async function handleListSandboxes(_req: Request, res: Response) {
   try {
     const entries = await fetchSandboxes();
-    json(res, entries);
+    res.json(entries);
   } catch (err: any) {
-    json(res, { error: err.message }, 500);
+    res.status(500).json({ error: err.message });
   }
 }
 
-export function handleUpdateOne(res: ServerResponse, sandboxId: string) {
+export function handleUpdateOne(req: Request, res: Response) {
+  const sandboxId = req.params.sandboxId as string;
   if (runningUpdates.has(sandboxId)) {
-    json(res, { error: "Already updating" }, 409);
+    res.status(409).json({ error: "Already updating" });
     return;
   }
-  json(res, { started: true });
+  res.json({ started: true });
 
   const ac = new AbortController();
   runningUpdates.set(sandboxId, ac);
@@ -63,19 +62,19 @@ export function handleUpdateOne(res: ServerResponse, sandboxId: string) {
   ).finally(() => { runningUpdates.delete(sandboxId); currentPhases.delete(sandboxId); });
 }
 
-export function handleStopOne(res: ServerResponse, sandboxId: string) {
-  const ac = runningUpdates.get(sandboxId);
+export function handleStopOne(req: Request, res: Response) {
+  const ac = runningUpdates.get(req.params.sandboxId as string);
   if (ac) ac.abort();
-  json(res, { stopped: !!ac });
+  res.json({ stopped: !!ac });
 }
 
-export function handleStopAll(res: ServerResponse) {
+export function handleStopAll(_req: Request, res: Response) {
   for (const ac of runningUpdates.values()) ac.abort();
-  json(res, { stopped: runningUpdates.size });
+  res.json({ stopped: runningUpdates.size });
 }
 
-export function handleUpdateAll(res: ServerResponse) {
-  json(res, { started: true });
+export function handleUpdateAll(_req: Request, res: Response) {
+  res.json({ started: true });
 
   (async () => {
     try {
@@ -113,6 +112,6 @@ export function handleUpdateAll(res: ServerResponse) {
   })();
 }
 
-export function handlePhases(res: ServerResponse) {
-  json(res, UPDATE_PHASES);
+export function handlePhases(_req: Request, res: Response) {
+  res.json(UPDATE_PHASES);
 }

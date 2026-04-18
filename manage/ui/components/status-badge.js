@@ -1,5 +1,17 @@
 import { createElement as h } from "react";
 
+// DB status → color
+export function dbStatusColor(status) {
+  switch (status) {
+    case "ready":    return "var(--green)";
+    case "creating": return "var(--yellow)";
+    case "healing":  return "var(--yellow)";
+    case "broken":   return "var(--red)";
+    case "error":    return "var(--red)";
+    default:         return "var(--text-3)";
+  }
+}
+
 export function badge(s, phase) {
   const styles = {
     pending:  { background: "var(--bg-3)", color: "var(--text-2)", dot: "var(--text-3)" },

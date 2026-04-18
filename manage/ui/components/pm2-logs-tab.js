@@ -24,7 +24,34 @@ const RULES = [
   { re: /'[^']{1,80}'/g, color: "var(--green)" },
 ];
 
+// Healer-specific line styles.
+// If `prefix` is set, only the prefix is colored; the rest uses `color` (dimmed).
+// Otherwise the whole line uses `color` + `bg`.
+const HEALER_LINE_STYLES = [
+  { re: /^> /,    color: "var(--text-1)", bg: null,               prefix: { len: 1, color: "var(--green)" } }, // tool call
+  { re: /^→ /,    color: "var(--text-1)", bg: null,               prefix: { len: 1, color: "var(--blue)" } },  // tool result
+  { re: /^✓ /,    color: "var(--green)",  bg: "var(--green-bg)" },                                              // finish
+  { re: /^✗ /,    color: "var(--red)",    bg: "var(--red-bg)" },                                                // error
+  { re: /^⚠ /,    color: "var(--yellow)", bg: "var(--yellow-bg)" },                                             // abort
+  { re: /^  \S/,  color: "var(--text-0)", bg: null },                                                           // agent text
+];
+
+function healerRule(text) {
+  return HEALER_LINE_STYLES.find((r) => r.re.test(text)) || null;
+}
+
 function highlightLine(text) {
+  const h_rule = healerRule(text);
+  if (h_rule) {
+    if (h_rule.prefix) {
+      return [
+        h("span", { key: "p", style: { color: h_rule.prefix.color } }, text.slice(0, h_rule.prefix.len)),
+        text.slice(h_rule.prefix.len),
+      ];
+    }
+    return text;
+  }
+
   // Build a list of colored spans by finding all rule matches
   const spans = []; // { start, end, color }
 
@@ -60,25 +87,16 @@ function highlightLine(text) {
   return parts;
 }
 
-function lineColor(text) {
-  if (/\b(ERROR|Error|error|FATAL|fatal|ERR!)\b/.test(text)) return "var(--red)";
-  if (/\b(WARN|warn|Warning|warning)\b/.test(text)) return null;
-  if (/^\s+at /.test(text)) return "var(--red)";
-  return null;
+function lineStyle(text) {
+  const rule = healerRule(text);
+  if (rule) return { color: rule.color, bg: rule.bg };
+  if (/\b(ERROR|Error|error|FATAL|fatal|ERR!)\b/.test(text)) return { color: "var(--red)", bg: "var(--red-bg)" };
+  if (/^\s+at /.test(text)) return { color: "var(--red)", bg: null };
+  return { color: null, bg: null };
 }
 
 export function PM2LogsTab({ selected, pm2Logs, pm2Process, setPm2Process, pm2Loading, pm2Auto, setPm2Auto, fetchPm2Logs, pm2LogRef, scrollRef }) {
-  const data = pm2Logs[selected];
-  const procColors = { shmastra: "var(--blue)", healer: "var(--green)" };
-
-  const allLines = [];
-  if (data) {
-    for (const group of data) {
-      for (const line of group.lines) {
-        allLines.push({ process: group.process, text: line });
-      }
-    }
-  }
+  const allLines = pm2Logs[selected] || null;
 
   return h("div", {
     style: { flex: 1, display: "flex", flexDirection: "column", background: "var(--bg-0)", minHeight: 0 },
@@ -90,7 +108,7 @@ export function PM2LogsTab({ selected, pm2Logs, pm2Process, setPm2Process, pm2Lo
         borderBottom: "1px solid var(--border)",
       },
     },
-      ...["all", "shmastra", "healer"].map((proc) =>
+      ...["shmastra", "healer"].map((proc) =>
         h("button", {
           key: proc,
           onClick: () => { setPm2Process(proc); fetchPm2Logs(selected, proc); },
@@ -107,7 +125,7 @@ export function PM2LogsTab({ selected, pm2Logs, pm2Process, setPm2Process, pm2Lo
       h("div", { style: { flex: 1 } }),
       h("button", {
         onClick: () => setPm2Auto((a) => !a),
-        title: pm2Auto ? "Stop auto-refresh" : "Auto-refresh every 5s",
+        "data-tooltip-id": "tt", "data-tooltip-content": pm2Auto ? "Stop auto-refresh" : "Auto-refresh every 5s",
         style: {
           padding: "2px 8px", fontSize: "11px", borderRadius: "4px",
           fontFamily: "'JetBrains Mono', monospace",
@@ -136,7 +154,7 @@ export function PM2LogsTab({ selected, pm2Logs, pm2Process, setPm2Process, pm2Lo
       ref: pm2LogRef,
       style: { flex: 1, overflow: "auto", padding: "8px 0" },
     },
-      !data
+      !allLines
         ? h("div", {
             className: "mono",
             style: { color: "var(--text-3)", fontSize: "11px", textAlign: "center", padding: "32px 0" },
@@ -147,23 +165,15 @@ export function PM2LogsTab({ selected, pm2Logs, pm2Process, setPm2Process, pm2Lo
               style: { color: "var(--text-3)", fontSize: "11px", textAlign: "center", padding: "32px 0" },
             }, "~ no logs ~")
           : allLines.map((entry, i) => {
-              const lc = lineColor(entry.text);
+              const ls = lineStyle(entry.text);
               return h("div", {
                 key: i, className: "mono",
                 style: {
                   fontSize: "11px", lineHeight: "18px", padding: "0 12px",
-                  color: "var(--text-2)", whiteSpace: "pre-wrap", wordBreak: "break-all",
-                  ...(lc ? { background: lc === "var(--red)" ? "rgba(239,68,68,0.05)" : undefined } : {}),
+                  color: ls.color || "var(--text-2)", whiteSpace: "pre-wrap", wordBreak: "break-all",
+                  ...(ls.bg ? { background: ls.bg } : {}),
                 },
-              },
-                data.length > 1 ? h("span", {
-                  style: {
-                    color: procColors[entry.process] || "var(--text-3)",
-                    marginRight: "6px", fontSize: "10px", userSelect: "none",
-                  },
-                }, entry.process === "shmastra" ? "S" : "H") : null,
-                highlightLine(entry.text),
-              );
+              }, highlightLine(entry.text));
             }),
       h("div", { ref: scrollRef }),
     ),

@@ -1,128 +1,124 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { readBody, json, jsonError, connectSandbox } from "./helpers.mjs";
+import type { Request, Response } from "express";
+import { connectSandbox } from "./helpers.mjs";
 
-export async function handleFiles(
-  req: IncomingMessage,
-  res: ServerResponse,
-  sandboxId: string,
-  action: string,
-  url: URL,
-) {
-  let sandbox;
+function userForPath(path: string): string {
+  return path.startsWith("/home/user") ? "user" : "root";
+}
+
+async function getSandboxOrError(sandboxId: string, res: Response) {
   try {
-    sandbox = await connectSandbox(sandboxId);
+    return await connectSandbox(sandboxId);
   } catch (err: any) {
-    return jsonError(res, err);
+    res.status(500).json({ error: err.message });
+    return null;
   }
+}
 
-  const filePath = url.searchParams.get("path") || "/home/user";
+export async function handleFilesList(req: Request, res: Response) {
+  const sandbox = await getSandboxOrError(req.params.sandboxId as string, res);
+  if (!sandbox) return;
+  const filePath = (req.query.path as string) || "/home/user";
+  try {
+    const entries = await sandbox.files.list(filePath, { user: userForPath(filePath) });
+    const items = entries.map((e: any) => ({ name: e.name, type: e.type, path: e.path }));
+    items.sort((a: any, b: any) => {
+      if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    res.json(items);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}
 
-  // List directory
-  if (action === "list" && req.method === "GET") {
-    try {
-      const entries = await sandbox.files.list(filePath);
-      const items = entries.map((e: any) => ({ name: e.name, type: e.type, path: e.path }));
-      items.sort((a: any, b: any) => {
-        if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
-        return a.name.localeCompare(b.name);
+export async function handleFilesRead(req: Request, res: Response) {
+  const sandbox = await getSandboxOrError(req.params.sandboxId as string, res);
+  if (!sandbox) return;
+  const filePath = (req.query.path as string) || "/home/user";
+  try {
+    const content = await sandbox.files.read(filePath, { user: userForPath(filePath) });
+    res.json({ path: filePath, content });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+export async function handleFilesDownload(req: Request, res: Response) {
+  const sandbox = await getSandboxOrError(req.params.sandboxId as string, res);
+  if (!sandbox) return;
+  const filePath = (req.query.path as string) || "/home/user";
+  try {
+    const isDir = req.query.type === "dir";
+    const name = filePath.split("/").pop() || "file";
+
+    if (isDir) {
+      const tmpArchive = `/tmp/${name}-${Date.now()}.tar.gz`;
+      const parent = filePath.split("/").slice(0, -1).join("/") || "/";
+      const user = userForPath(filePath);
+      await sandbox.commands.run(
+        `tar -czf ${JSON.stringify(tmpArchive)} -C ${JSON.stringify(parent)} ${JSON.stringify(name)}`,
+        { timeoutMs: 120_000, user },
+      );
+      const content = await sandbox.files.read(tmpArchive, { format: "bytes", user });
+      sandbox.commands.run(`rm -f ${JSON.stringify(tmpArchive)}`, { timeoutMs: 5_000, user }).catch(() => {});
+      res.writeHead(200, {
+        "Content-Type": "application/gzip",
+        "Content-Disposition": `attachment; filename="${name}.tar.gz"`,
       });
-      json(res, items);
-    } catch (err: any) {
-      jsonError(res, err);
+      res.end(Buffer.from(content));
+    } else {
+      const content = await sandbox.files.read(filePath, { format: "bytes", user: userForPath(filePath) });
+      res.writeHead(200, {
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${name}"`,
+      });
+      res.end(Buffer.from(content));
     }
-    return;
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
+}
 
-  // Read file
-  if (action === "read" && req.method === "GET") {
-    try {
-      const content = await sandbox.files.read(filePath);
-      json(res, { path: filePath, content });
-    } catch (err: any) {
-      jsonError(res, err);
-    }
-    return;
+export async function handleFilesWrite(req: Request, res: Response) {
+  const sandbox = await getSandboxOrError(req.params.sandboxId as string, res);
+  if (!sandbox) return;
+  try {
+    await sandbox.files.write(req.body.path, req.body.content, { user: userForPath(req.body.path) });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
+}
 
-  // Download file or directory (zip for dirs)
-  if (action === "download" && req.method === "GET") {
-    try {
-      const isDir = url.searchParams.get("type") === "dir";
-      const name = filePath.split("/").pop() || "file";
-
-      if (isDir) {
-        const tmpZip = `/tmp/${name}-${Date.now()}.zip`;
-        const parent = filePath.split("/").slice(0, -1).join("/") || "/";
-        await sandbox.commands.run(
-          `cd ${JSON.stringify(parent)} && zip -r ${JSON.stringify(tmpZip)} ${JSON.stringify(name)}`,
-          { timeoutMs: 120_000 },
-        );
-        const content = await sandbox.files.read(tmpZip, { format: "bytes" });
-        sandbox.commands.run(`rm -f ${JSON.stringify(tmpZip)}`, { timeoutMs: 5_000 }).catch(() => {});
-        res.writeHead(200, {
-          "Content-Type": "application/zip",
-          "Content-Disposition": `attachment; filename="${name}.zip"`,
-        });
-        res.end(Buffer.from(content));
-      } else {
-        const content = await sandbox.files.read(filePath, { format: "bytes" });
-        res.writeHead(200, {
-          "Content-Type": "application/octet-stream",
-          "Content-Disposition": `attachment; filename="${name}"`,
-        });
-        res.end(Buffer.from(content));
-      }
-    } catch (err: any) {
-      jsonError(res, err);
-    }
-    return;
+export async function handleFilesMkdir(req: Request, res: Response) {
+  const sandbox = await getSandboxOrError(req.params.sandboxId as string, res);
+  if (!sandbox) return;
+  try {
+    await sandbox.files.makeDir(req.body.path, { user: userForPath(req.body.path) });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
+}
 
-  // Write file
-  if (action === "write" && req.method === "POST") {
-    try {
-      const body = JSON.parse(await readBody(req));
-      await sandbox.files.write(body.path, body.content);
-      json(res, { ok: true });
-    } catch (err: any) {
-      jsonError(res, err);
-    }
-    return;
+export async function handleFilesDelete(req: Request, res: Response) {
+  const sandbox = await getSandboxOrError(req.params.sandboxId as string, res);
+  if (!sandbox) return;
+  try {
+    await sandbox.files.remove(req.body.path, { user: userForPath(req.body.path) });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
+}
 
-  // Create directory
-  if (action === "mkdir" && req.method === "POST") {
-    try {
-      const body = JSON.parse(await readBody(req));
-      await sandbox.files.makeDir(body.path);
-      json(res, { ok: true });
-    } catch (err: any) {
-      jsonError(res, err);
-    }
-    return;
-  }
-
-  // Delete file/dir
-  if (action === "delete" && req.method === "POST") {
-    try {
-      const body = JSON.parse(await readBody(req));
-      await sandbox.files.remove(body.path);
-      json(res, { ok: true });
-    } catch (err: any) {
-      jsonError(res, err);
-    }
-    return;
-  }
-
-  // Rename
-  if (action === "rename" && req.method === "POST") {
-    try {
-      const body = JSON.parse(await readBody(req));
-      await sandbox.files.rename(body.oldPath, body.newPath);
-      json(res, { ok: true });
-    } catch (err: any) {
-      jsonError(res, err);
-    }
-    return;
+export async function handleFilesRename(req: Request, res: Response) {
+  const sandbox = await getSandboxOrError(req.params.sandboxId as string, res);
+  if (!sandbox) return;
+  try {
+    await sandbox.files.rename(req.body.oldPath, req.body.newPath, { user: userForPath(req.body.oldPath) });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 }

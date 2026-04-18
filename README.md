@@ -2,7 +2,7 @@
 
 [Shmastra](https://github.com/just-ai/shmastra) in the E2B cloud.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fjust-ai%2Fshmastra-cloud&project-name=shmastra-cloud&repository-name=shmastra-cloud&envDescription=See%20README%20for%20the%20full%20list%20of%20required%20environment%20variables&envLink=https%3A%2F%2Fgithub.com%2Fjust-ai%2Fshmastra-cloud%23environment-variables)
+Ready to deploy on [Vercel](https://vercel.com).
 
 ## Environment variables
 
@@ -118,6 +118,59 @@ manage/
     ├── utils.js           #   API helpers, SSE parser
     └── components/        #   UI components (table, panel, tabs, chat, files, logs)
 ```
+
+## Healer Agent (`scripts/sandbox/healer.mts`)
+
+Each sandbox runs a self-healing agent as a separate PM2 process alongside the main Mastra dev server. The healer monitors server health and automatically diagnoses and fixes crashes without human intervention.
+
+### How crashes are detected
+
+The healer uses three independent monitoring mechanisms:
+
+1. **PM2 process exit events** — listens to the PM2 bus for `exit` events from the `shmastra` process. When PM2 exhausts its restart attempts (`max_restarts: 1`), the healer takes over.
+2. **Health check polling** — every 20 seconds, sends a request to `http://localhost:4111/health`. If the check fails, waits 10 seconds and retries. Two consecutive failures while PM2 reports the process as "online" (i.e. the process is running but the server isn't responding) triggers the heal.
+3. **Stuck bundling detection** — monitors the log file (`shmastra/.logs/shmastra.log`). If the last line contains "Bundling..." and the file hasn't been modified for 20 seconds, restarts the dev server (without a full heal).
+
+### How the heal works
+
+When a crash is confirmed:
+
+1. **Status report** — the healer sends `status: "healing"` to the cloud API (`POST /api/sandbox/heal`), which updates the sandbox status in Supabase. The dashboard and workspace UI reflect this status.
+2. **AI agent** — a Mastra Agent (Claude Sonnet) is created with full workspace access (file read/write, shell commands) plus a custom `restart_shmastra` tool that restarts the PM2 process and waits up to 30 seconds for a healthy response.
+3. **Diagnose & fix** — the agent reads the last lines of the server log, inspects source files, makes minimal targeted code fixes, and restarts the server.
+4. **Retry loop** — if the first fix doesn't work, the agent gets another attempt with context about the previous failure. Up to 3 attempts total.
+5. **Outcome**:
+   - **Success** — the agent commits its fix (`git commit`), reports `status: "ready"` to the cloud, and restarts the healer process to free memory.
+   - **Failure** — after 3 failed attempts, reports `status: "broken"` with an error summary, and stops the healer to avoid infinite loops.
+
+### Status flow
+
+```
+running → (crash detected) → healing → ready
+                                     → broken (after 3 failed attempts)
+```
+
+The `healing`/`ready`/`broken` statuses are stored in the `sandboxes` table and visible in the Sandbox Manager UI. The cloud endpoint (`/api/sandbox/heal`) authenticates the healer via the sandbox's virtual key (`MASTRA_AUTH_TOKEN`).
+
+### Agent capabilities
+
+The healer agent can:
+- Read and edit any project file (except `src/shmastra` internals)
+- Execute shell commands (e.g. `pnpm install` to fix dependency issues)
+- Restart the dev server and verify it's healthy
+- Check `.env` for missing environment variables
+- Commit fixes to git
+
+### PM2 configuration
+
+Both processes are defined in `scripts/sandbox/ecosystem.config.cjs`:
+
+| Process | Description | Auto-restart | Max restarts |
+|---|---|---|---|
+| `shmastra` | Mastra dev server (`pnpm dev`) | yes | 1 |
+| `healer` | Self-healing agent | yes | unlimited |
+
+The dev server is configured with `max_restarts: 1` so PM2 gives up quickly and hands control to the healer. Both processes log to `.logs/` inside the project directory.
 
 ## Other scripts
 

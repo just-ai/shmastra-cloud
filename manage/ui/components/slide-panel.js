@@ -1,10 +1,13 @@
 import { createElement as h, useEffect, useRef, useState } from "react";
+import { dbStatusColor } from "./status-badge.js";
 import { TabBar } from "./tab-bar.js";
 import { PhaseBar } from "./phase-bar.js";
 import { UpdateLogTab } from "./update-log-tab.js";
 import { PM2LogsTab } from "./pm2-logs-tab.js";
 import { ChatTab } from "./chat-tab.js";
 import { FilesTab } from "./files-tab.js";
+import { StatsTab } from "./stats-tab.js";
+import { TraceTab } from "./trace-tab.js";
 
 export function SlidePanel({
   selected, selectedEntry, panelWidth, setPanelWidth,
@@ -97,8 +100,8 @@ export function SlidePanel({
         h("span", { style: { fontSize: "13px", color: "var(--text-1)", fontWeight: 500 } },
           selectedEntry?.email || selected),
         (() => {
-          const st = selectedEntry?.state;
-          const color = st === "running" ? "var(--green)" : st === "paused" ? "var(--yellow)" : "var(--text-3)";
+          const st = selectedEntry?.status;
+          const color = dbStatusColor(st);
           const label = st || "unknown";
           return h("span", {
             style: {
@@ -146,6 +149,12 @@ export function SlidePanel({
     h("div", {
       style: { flex: currentTab === "files" ? 1 : 0, display: currentTab === "files" ? "flex" : "none", flexDirection: "column", minHeight: 0 },
     }, h(FilesTab, { selected })),
+
+    // Stats tab
+    currentTab === "stats" && h(StatsTab, { sandboxId: selected }),
+
+    // Trace tab (observability)
+    currentTab === "trace" && h(TraceTab, { sandboxId: selected }),
 
     // Chat tab
     currentTab === "chat" && h(ChatTab, {

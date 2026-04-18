@@ -9,7 +9,7 @@ export function UpdateLogTab({ logs, highlightPhase, hoveredPhase, setHoveredPha
       ? h("div", {
           className: "mono",
           style: { color: "var(--text-3)", fontSize: "11px", textAlign: "center", padding: "32px 0" },
-        }, "~ no logs yet ~")
+        }, "Update not started. Click \"update\" to pull latest changes.")
       : logs.map((entry, i) => {
           const hl = highlightPhase && entry.phase === highlightPhase;
           return h("div", {

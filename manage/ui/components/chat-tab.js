@@ -49,7 +49,7 @@ export function ChatTab({ selected, messages, streaming, chatInput, setChatInput
     },
       h("button", {
         onClick: () => setCmdMode((m) => !m),
-        title: cmdMode ? "Command mode (click for agent)" : "Agent mode (click for command)",
+        "data-tooltip-id": "tt", "data-tooltip-content": cmdMode ? "Command mode (click for agent)" : "Agent mode (click for command)",
         style: {
           width: "28px", height: "28px", borderRadius: "4px",
           border: "1px solid " + (cmdMode ? "var(--text-3)" : "var(--border)"),

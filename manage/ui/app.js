@@ -1,4 +1,5 @@
 import { createElement as h, useState, useEffect, useRef, useCallback } from "react";
+import { Tooltip } from "react-tooltip";
 import { API, parseSSE } from "./utils.js";
 import { Header } from "./components/header.js";
 import { SandboxTable } from "./components/sandbox-table.js";
@@ -27,9 +28,24 @@ export function App() {
   const [activePhase, setActivePhase] = useState(null);
   const logContainerRef = useRef(null);
 
+  // Toasts
+  const [toasts, setToasts] = useState([]);
+  const toastId = useRef(0);
+  const addToast = useCallback((message, type = "error") => {
+    const id = ++toastId.current;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
+  }, []);
+
+  // Env profile state
+  const [envProfile, setEnvProfile] = useState(null);
+  const [envProfiles, setEnvProfiles] = useState([]);
+  const [envFiles, setEnvFiles] = useState([]);
+  const [envSwitching, setEnvSwitching] = useState(false);
+
   // PM2 logs state
   const [pm2Logs, setPm2Logs] = useState({});
-  const [pm2Process, setPm2Process] = useState("all");
+  const [pm2Process, setPm2Process] = useState("shmastra");
   const [pm2Loading, setPm2Loading] = useState(false);
   const [pm2Auto, setPm2Auto] = useState(false);
   const pm2IntervalRef = useRef(null);
@@ -39,9 +55,13 @@ export function App() {
 
   useEffect(() => {
     fetch(`${API}/api/sandboxes`)
-      .then((r) => r.json())
-      .then((entries) => { setSandboxes(entries); setLoading(false); })
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then((entries) => { if (Array.isArray(entries)) setSandboxes(entries); setLoading(false); })
       .catch(() => setLoading(false));
+    fetch(`${API}/api/env`)
+      .then((r) => r.json())
+      .then(({ profile, profiles, files }) => { setEnvProfile(profile); setEnvProfiles(profiles); setEnvFiles(files); })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -73,6 +93,15 @@ export function App() {
   }, [selected, tab]);
 
   useEffect(() => { setActivePhase(null); setHoveredPhase(null); }, [selected]);
+
+  // Keep the selected sandbox alive while the panel is open
+  useEffect(() => {
+    if (!selected) return;
+    const ping = () => fetch(`${API}/api/keepalive/${selected}`, { method: "POST" }).catch(() => {});
+    ping();
+    const interval = setInterval(ping, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [selected]);
 
   useEffect(() => {
     if (selected && getTab(selected) === "chat" && !chatStreaming[selected]) {
@@ -140,11 +169,47 @@ export function App() {
   }, []);
 
   const reloadSandboxes = useCallback(() => {
-    fetch(`${API}/api/sandboxes`)
-      .then((r) => r.json())
-      .then((entries) => setSandboxes(entries))
+    return fetch(`${API}/api/sandboxes`)
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then((entries) => { if (Array.isArray(entries)) setSandboxes(entries); })
       .catch(() => {});
   }, []);
+
+  const switchEnv = useCallback(async (profile) => {
+    const prev = envProfile;
+    setEnvSwitching(true);
+    try {
+      const r = await fetch(`${API}/api/env`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile }),
+      });
+      const data = await r.json();
+      if (data.error) { addToast(data.error); return; }
+      setEnvProfile(data.profile);
+      setEnvFiles(data.files);
+      // Verify sandboxes load with new env
+      const sr = await fetch(`${API}/api/sandboxes`);
+      const body = await sr.json();
+      if (!sr.ok) throw new Error(body.error || `HTTP ${sr.status}`);
+      if (Array.isArray(body)) setSandboxes(body);
+    } catch (err) {
+      addToast(`Failed to switch to "${profile}": ${err.message}. Reverted to "${prev}".`);
+      // Revert
+      const rr = await fetch(`${API}/api/env`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: prev }),
+      }).catch(() => null);
+      if (rr) {
+        const d = await rr.json();
+        setEnvProfile(d.profile);
+        setEnvFiles(d.files);
+      }
+    } finally {
+      setEnvSwitching(false);
+    }
+  }, [envProfile]);
 
   const stopChat = useCallback((sandboxId) => {
     const ac = chatAbortRef.current[sandboxId];
@@ -355,6 +420,7 @@ export function App() {
           search, setSearch,
           filtered: filtered.length, total: sandboxes.length,
           reloadSandboxes, anyRunning, stopAll, updateAll,
+          envProfile, envProfiles, envFiles, envSwitching, switchEnv,
         }),
         h(SandboxTable, {
           filtered, selected, setSelected, statuses, phases, getStatus, updateOne, stopOne, setTab, loading,
@@ -372,5 +438,41 @@ export function App() {
       chatMessages: selectedChat, chatStreaming, chatInput, setChatInput, cmdMode, setCmdMode, sendChat, stopChat, expandedTools, setExpandedTools, inputRef,
       onClose: () => setSelected(null),
     }),
+
+    h(Tooltip, {
+      id: "tt",
+      style: {
+        background: "var(--bg-3)", color: "var(--text-0)",
+        fontSize: "11px", padding: "4px 8px", borderRadius: "4px",
+        fontFamily: "'JetBrains Mono', monospace",
+        zIndex: 1000, maxWidth: "320px",
+      },
+      opacity: 1,
+      delayShow: 300,
+    }),
+
+    // ── Toasts ──
+    toasts.length > 0 && h("div", {
+      style: {
+        position: "fixed", bottom: "16px", right: "16px", zIndex: 2000,
+        display: "flex", flexDirection: "column", gap: "8px",
+        maxWidth: "400px",
+      },
+    },
+      toasts.map((t) => h("div", {
+        key: t.id,
+        onClick: () => setToasts((prev) => prev.filter((x) => x.id !== t.id)),
+        style: {
+          background: t.type === "error" ? "var(--red-bg)" : "var(--bg-3)",
+          border: `1px solid ${t.type === "error" ? "var(--red)" : "var(--border)"}`,
+          color: t.type === "error" ? "var(--red)" : "var(--text-0)",
+          padding: "8px 12px", borderRadius: "6px",
+          fontSize: "12px", lineHeight: "1.4",
+          fontFamily: "'JetBrains Mono', monospace",
+          cursor: "pointer",
+          animation: "toastIn 0.15s ease-out",
+        },
+      }, t.message)),
+    ),
   );
 }

@@ -1,8 +1,8 @@
-import { Sandbox } from "e2b";
 import { supabase } from "../env.mjs";
 import {
   run,
   checkAbort,
+  connectSandbox,
   AbortError,
   type SandboxInstance,
   type LogFn,
@@ -55,7 +55,7 @@ export async function updateSandbox(
 
   let sandbox: SandboxInstance;
   try {
-    sandbox = await Sandbox.connect(sandboxId, { timeoutMs: 10 * 60 * 1000 });
+    sandbox = await connectSandbox(sandboxId, { timeoutMs: 10 * 60 * 1000 });
   } catch (err: any) {
     log(`✗ Failed to connect: ${err.message}`);
     onStatus?.("error");
@@ -162,9 +162,9 @@ export async function updateSandbox(
     await run(sandbox, `cd "${WORKTREE_DIR}" && (pnpm dry-run > /tmp/dry-run.log 2>&1; echo $? > /tmp/dry-run-exit)`, log, {
       timeoutMs: 180_000,
     });
-    const dryRunLog = await sandbox.files.read("/tmp/dry-run.log").catch(() => "");
+    const dryRunLog = await sandbox.files.read("/tmp/dry-run.log", { user: "user" }).catch(() => "");
     if (dryRunLog.trim()) log(dryRunLog.trim());
-    const dryRunExit = (await sandbox.files.read("/tmp/dry-run-exit").catch(() => "1")).trim();
+    const dryRunExit = (await sandbox.files.read("/tmp/dry-run-exit", { user: "user" }).catch(() => "1")).trim();
     if (dryRunExit !== "0") {
       throw new Error(`dry-run failed (exit ${dryRunExit})`);
     }

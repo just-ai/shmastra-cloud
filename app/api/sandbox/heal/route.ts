@@ -2,14 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveVirtualKey } from "@/lib/virtual-keys";
 import { updateSandbox } from "@/lib/db";
 
-const VALID_STATUSES = ["healing", "healed", "broken"] as const;
+const VALID_STATUSES = ["healing", "ready", "broken"] as const;
 type HealStatus = (typeof VALID_STATUSES)[number];
-
-const STATUS_MAP: Record<HealStatus, string> = {
-  healing: "healing",
-  healed: "ready",
-  broken: "broken",
-};
 
 export async function POST(request: NextRequest) {
   const token = request.headers.get("authorization")?.replace("Bearer ", "");
@@ -23,9 +17,9 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const healStatus = body.status as HealStatus;
+  const status = body.status as HealStatus;
 
-  if (!VALID_STATUSES.includes(healStatus)) {
+  if (!VALID_STATUSES.includes(status)) {
     return NextResponse.json(
       { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}` },
       { status: 400 },
@@ -33,8 +27,8 @@ export async function POST(request: NextRequest) {
   }
 
   await updateSandbox(resolved.userId, {
-    status: STATUS_MAP[healStatus],
-    error_message: healStatus === "broken" ? (body.error ?? "Auto-heal failed") : null,
+    status,
+    error_message: status === "broken" ? (body.error ?? "Auto-heal failed") : null,
   });
 
   return NextResponse.json({ ok: true });

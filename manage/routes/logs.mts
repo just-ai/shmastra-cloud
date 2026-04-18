@@ -1,35 +1,29 @@
-import type { ServerResponse } from "node:http";
-import { json, jsonError, connectSandbox } from "./helpers.mjs";
+import type { Request, Response } from "express";
+import { connectSandbox } from "./helpers.mjs";
 
-export async function handleLogs(res: ServerResponse, sandboxId: string, lines: number, process: string) {
+const LOG_DIR = "/home/user/shmastra/.logs";
+const LOG_FILES: Record<string, string> = {
+  shmastra: `${LOG_DIR}/shmastra.log`,
+  healer:   `${LOG_DIR}/healer.log`,
+};
+
+export async function handleLogs(req: Request, res: Response) {
+  const sandboxId = req.params.sandboxId as string;
+  const lines = Math.min(Number(req.query.lines) || 200, 2000);
+  const processName = String(req.query.process || "shmastra");
+  const file = LOG_FILES[processName];
+
+  if (!file) {
+    res.status(400).json({ error: `Unknown process: ${processName}` });
+    return;
+  }
+
   try {
     const sandbox = await connectSandbox(sandboxId);
-
-    const logDir = "/home/user/shmastra/.logs";
-    const logFiles: Record<string, string> = {
-      shmastra: `${logDir}/shmastra.log`,
-      healer: `${logDir}/healer.log`,
-    };
-
-    const targets = process === "all" ? Object.keys(logFiles) : [process];
-    const results: { process: string; lines: string[] }[] = [];
-
-    for (const proc of targets) {
-      const file = logFiles[proc];
-      if (!file) continue;
-      try {
-        const result = await sandbox.commands.run(`tail -n ${lines} ${file} 2>/dev/null`, { timeoutMs: 10_000 });
-        results.push({
-          process: proc,
-          lines: result.stdout ? result.stdout.split("\n").filter((l: string) => l) : [],
-        });
-      } catch {
-        results.push({ process: proc, lines: [] });
-      }
-    }
-
-    json(res, results);
+    const result = await sandbox.commands.run(`tail -n ${lines} ${file} 2>/dev/null`, { timeoutMs: 10_000, user: "user" });
+    const raw = result.stdout ? result.stdout.split("\n").filter((l: string) => l) : [];
+    res.json(raw.map((text) => ({ process: processName, text })));
   } catch (err: any) {
-    jsonError(res, err);
+    res.status(500).json({ error: err.message });
   }
 }

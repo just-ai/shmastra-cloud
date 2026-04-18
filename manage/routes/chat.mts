@@ -1,19 +1,14 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Request, Response } from "express";
 import { WORKSPACE_TOOLS } from "@mastra/core/workspace";
 import { streamMessage, destroySession } from "../agent/session.mjs";
-import { readBody, json, jsonError, sseHeaders, sseWrite } from "./helpers.mjs";
+import { sseHeaders, sseWrite } from "./helpers.mjs";
 
-export async function handleChat(req: IncomingMessage, res: ServerResponse, sandboxId: string) {
-  let body: any;
-  try {
-    body = JSON.parse(await readBody(req));
-  } catch {
-    return json(res, { error: "Invalid JSON" }, 400);
-  }
-
-  const message = body?.message;
+export async function handleChat(req: Request, res: Response) {
+  const sandboxId = req.params.sandboxId as string;
+  const message = req.body?.message;
   if (!message || typeof message !== "string") {
-    return json(res, { error: "message is required" }, 400);
+    res.status(400).json({ error: "message is required" });
+    return;
   }
 
   sseHeaders(res);
@@ -65,7 +60,7 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, sand
   res.end();
 }
 
-export function handleDestroyChat(res: ServerResponse, sandboxId: string) {
-  destroySession(sandboxId);
-  json(res, { ok: true });
+export function handleDestroyChat(req: Request, res: Response) {
+  destroySession(req.params.sandboxId as string);
+  res.json({ ok: true });
 }

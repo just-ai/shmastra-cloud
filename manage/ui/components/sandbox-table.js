@@ -1,6 +1,6 @@
 import { createElement as h } from "react";
 import { timeAgo } from "../utils.js";
-import { badge } from "./status-badge.js";
+import { badge, dbStatusColor } from "./status-badge.js";
 
 export function SandboxTable({ filtered, selected, setSelected, statuses, phases, getStatus, updateOne, stopOne, setTab, loading }) {
   if (loading) {
@@ -23,17 +23,16 @@ export function SandboxTable({ filtered, selected, setSelected, statuses, phases
             textTransform: "uppercase", letterSpacing: "0.5px",
           },
         },
-          h("th", { style: { textAlign: "left", padding: "10px 16px", fontWeight: 500, width: "25%", whiteSpace: "nowrap", overflow: "hidden" } }, "Sandbox"),
-          h("th", { style: { textAlign: "left", padding: "10px 16px", fontWeight: 500, width: "25%", whiteSpace: "nowrap", overflow: "hidden" } }, "Owner"),
-          h("th", { style: { textAlign: "left", padding: "10px 16px", fontWeight: 500, width: "18%", whiteSpace: "nowrap", overflow: "hidden" } }, "Status"),
-          h("th", { style: { textAlign: "left", padding: "10px 16px", fontWeight: 500, width: "14%", whiteSpace: "nowrap", overflow: "hidden" } }, "Active"),
-          h("th", { style: { textAlign: "right", padding: "10px 16px", fontWeight: 500, width: "18%", whiteSpace: "nowrap", overflow: "hidden" } }, ""),
+          h("th", { style: { textAlign: "left", padding: "10px 16px", fontWeight: 500, width: "35%", whiteSpace: "nowrap", overflow: "hidden" } }, "Sandbox"),
+          h("th", { style: { textAlign: "left", padding: "10px 16px", fontWeight: 500, width: "30%", whiteSpace: "nowrap", overflow: "hidden" } }, "Owner"),
+          h("th", { style: { textAlign: "left", padding: "10px 16px", fontWeight: 500, width: "15%", whiteSpace: "nowrap", overflow: "hidden" } }, "Active"),
+          h("th", { style: { textAlign: "right", padding: "10px 16px", fontWeight: 500, width: "20%", whiteSpace: "nowrap", overflow: "hidden" } }, ""),
         ),
       ),
       h("tbody", null,
         filtered.map((entry) => {
-          const { sandboxId: id, email, status: dbStatus, state, lastActiveAt, version } = entry;
-          const stateColor = state === "running" ? "var(--green)" : state === "paused" ? "var(--yellow)" : "var(--text-3)";
+          const { sandboxId: id, email, status: dbStatus, lastActiveAt, version } = entry;
+          const stateColor = dbStatusColor(dbStatus);
           return h("tr", {
             key: id,
             onClick: () => setSelected(selected === id ? null : id),
@@ -49,31 +48,26 @@ export function SandboxTable({ filtered, selected, setSelected, statuses, phases
             h("td", {
               className: "mono",
               style: { padding: "12px 16px", fontSize: "12px", color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-              title: id,
+              "data-tooltip-id": "tt", "data-tooltip-content": id,
             },
               h("span", {
-                title: state,
+                "data-tooltip-id": "tt", "data-tooltip-content": dbStatus || "unknown",
                 style: { display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", background: stateColor, flexShrink: 0, marginRight: "8px", verticalAlign: "middle" },
               }),
               id,
+              version ? h("span", { style: { color: "var(--text-3)", marginLeft: "8px" } }, "v" + version) : null,
             ),
             h("td", {
               style: { padding: "12px 16px", fontSize: "13px", color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-              title: email,
+              "data-tooltip-id": "tt", "data-tooltip-content": email,
             }, email),
             h("td", {
               className: "mono",
               style: { padding: "12px 16px", fontSize: "11px", color: "var(--text-2)", overflow: "hidden", whiteSpace: "nowrap" },
-            }, statuses[id]
-              ? badge(getStatus(id), phases[id])
-              : [dbStatus || "-", version ? h("span", { key: "v", style: { color: "var(--text-3)", marginLeft: "6px" } }, "v" + version) : null],
-            ),
-            h("td", {
-              className: "mono",
-              style: { padding: "12px 16px", fontSize: "11px", color: "var(--text-2)", overflow: "hidden", whiteSpace: "nowrap" },
-              title: lastActiveAt ? new Date(lastActiveAt).toLocaleString() : "",
+              "data-tooltip-id": "tt", "data-tooltip-content": lastActiveAt ? new Date(lastActiveAt).toLocaleString() : "",
             }, timeAgo(lastActiveAt)),
-            h("td", { style: { padding: "12px 16px", textAlign: "right", display: "flex", gap: "6px", justifyContent: "flex-end" } },
+            h("td", { style: { padding: "12px 16px", textAlign: "right", display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" } },
+              statuses[id] ? badge(getStatus(id), phases[id]) : null,
               getStatus(id) === "running"
                 ? h("button", {
                     onClick: (e) => { e.stopPropagation(); stopOne(id); },

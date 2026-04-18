@@ -25,7 +25,7 @@ export async function cliAgentMode(sandboxId: string) {
       if (!cmd) { prompt(); return; }
       try {
         console.log(`$ ${cmd}`);
-        const result = await session.sandbox.commands.run(cmd, { timeoutMs: 120_000 });
+        const result = await session.sandbox.commands.run(cmd, { timeoutMs: 120_000, user: "user" });
         if (result.stdout) process.stdout.write(result.stdout);
         if (result.stderr) process.stderr.write(result.stderr);
         if (result.exitCode !== 0) console.log(`exit: ${result.exitCode}`);

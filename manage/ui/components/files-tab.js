@@ -276,8 +276,8 @@ export function FilesTab({ selected }) {
         borderBottom: "1px solid var(--border)", minHeight: "36px",
       },
     },
-      btn({ onClick: goHome, title: "/home/user" }, ICON.home),
-      btn({ onClick: goUp, disabled: cwd === "/", title: "Go up", style: cwd === "/" ? { color: "var(--text-3)", cursor: "default" } : {} }, ICON.back),
+      btn({ onClick: goHome, "data-tooltip-id": "tt", "data-tooltip-content": "/home/user" }, ICON.home),
+      btn({ onClick: goUp, disabled: cwd === "/", "data-tooltip-id": "tt", "data-tooltip-content": "Go up", style: cwd === "/" ? { color: "var(--text-3)", cursor: "default" } : {} }, ICON.back),
       // Breadcrumb
       h("div", {
         className: "mono",
@@ -300,9 +300,9 @@ export function FilesTab({ selected }) {
           ];
         }).flat(),
       ),
-      btn({ onClick: () => setShowNewFolder(true), title: "New folder" }, "+\uD83D\uDCC1"),
-      btn({ onClick: () => fileInputRef.current?.click(), title: "Upload file" }, "\u2191"),
-      btn({ onClick: () => loadDir(cwd), title: "Refresh" }, ICON.refresh),
+      btn({ onClick: () => setShowNewFolder(true), "data-tooltip-id": "tt", "data-tooltip-content": "New folder" }, "+\uD83D\uDCC1"),
+      btn({ onClick: () => fileInputRef.current?.click(), "data-tooltip-id": "tt", "data-tooltip-content": "Upload file" }, "\u2191"),
+      btn({ onClick: () => loadDir(cwd), "data-tooltip-id": "tt", "data-tooltip-content": "Refresh" }, ICON.refresh),
       h("input", {
         ref: fileInputRef, type: "file", multiple: true,
         style: { display: "none" },
@@ -405,7 +405,7 @@ export function FilesTab({ selected }) {
                       onMouseEnter: (e) => { e.currentTarget.style.color = "var(--red)"; },
                       onMouseLeave: (e) => { e.currentTarget.style.color = "var(--text-3)"; },
                       className: "file-action",
-                      title: "Delete",
+                      "data-tooltip-id": "tt", "data-tooltip-content": "Delete",
                     }, "\u2715"),
                     // Download button
                     h("span", {
@@ -415,7 +415,7 @@ export function FilesTab({ selected }) {
                         opacity: 0, transition: "opacity 0.15s", padding: "0 2px",
                       },
                       className: "file-action",
-                      title: "Download",
+                      "data-tooltip-id": "tt", "data-tooltip-content": "Download",
                     }, ICON.download),
                   );
                 }),
@@ -447,8 +447,8 @@ export function FilesTab({ selected }) {
                 ]
               : btn({ onClick: startEdit }, "edit")
           ),
-          btn({ onClick: () => downloadFile(viewFile.path, false), title: "Download" }, ICON.download),
-          btn({ onClick: () => { setViewFile(null); setEditing(false); }, title: "Close", style: { fontSize: "14px", padding: "0 4px" } }, "\u2715"),
+          btn({ onClick: () => downloadFile(viewFile.path, false), "data-tooltip-id": "tt", "data-tooltip-content": "Download" }, ICON.download),
+          btn({ onClick: () => { setViewFile(null); setEditing(false); }, "data-tooltip-id": "tt", "data-tooltip-content": "Close", style: { fontSize: "14px", padding: "0 4px" } }, "\u2715"),
         ),
         // File content
         h("div", {

@@ -23,7 +23,9 @@ export function TabBar({ currentTab, setTab }) {
   },
     tabBtn("chat", "Chat", currentTab === "chat", () => setTab("chat")),
     tabBtn("pm2logs", "Logs", currentTab === "pm2logs", () => setTab("pm2logs")),
-    tabBtn("logs", "Update", currentTab === "logs", () => setTab("logs")),
     tabBtn("files", "Files", currentTab === "files", () => setTab("files")),
+    tabBtn("stats", "Stats", currentTab === "stats", () => setTab("stats")),
+    tabBtn("trace", "Trace", currentTab === "trace", () => setTab("trace")),
+    tabBtn("logs", "Update", currentTab === "logs", () => setTab("logs")),
   );
 }
