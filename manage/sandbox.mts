@@ -1,4 +1,4 @@
-import { Sandbox } from "e2b";
+import { Sandbox, CommandExitError } from "e2b";
 import { supabase } from "./env.mjs";
 
 export type SandboxInstance = Awaited<ReturnType<typeof Sandbox.connect>>;
@@ -140,7 +140,18 @@ export async function run(
 ) {
   checkAbort(signal);
   log(`$ ${cmd}`);
-  const result = await sandbox.commands.run(cmd, { timeoutMs });
+  // E2B's commands.run throws CommandExitError on non-zero exit by default —
+  // catch it so throwOnError:false actually works and we can log stdout/stderr.
+  let result: { stdout: string; stderr: string; exitCode: number };
+  try {
+    result = await sandbox.commands.run(cmd, { timeoutMs });
+  } catch (err) {
+    if (err instanceof CommandExitError) {
+      result = { stdout: err.stdout, stderr: err.stderr, exitCode: err.exitCode };
+    } else {
+      throw err;
+    }
+  }
   if (result.stdout.trim()) log(`  stdout: ${result.stdout.trim()}`);
   if (result.stderr.trim()) log(`  stderr: ${result.stderr.trim()}`);
   if (result.exitCode !== 0) {

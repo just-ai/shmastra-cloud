@@ -4,7 +4,7 @@ import { resolveVirtualKey } from "@/lib/virtual-keys";
 import { getSandboxExtendInfo, updateLastExtendedAt } from "@/lib/db";
 import { extendSandboxTimeout } from "@/lib/sandbox";
 
-export const maxDuration = 120; // 2 minuteы
+export const maxDuration = 120; // 2 minutes
 
 const EXTEND_INTERVAL_MS = 60_000; // 1 minute
 
@@ -67,13 +67,22 @@ async function handler(request: NextRequest): Promise<Response> {
     }
   }
 
-  if (!virtualKey) return json({ error: "Missing API key" }, 401);
+  if (!virtualKey) {
+    console.error("No virtual key found for " + pathname);
+    return json({ error: "Missing API key" }, 401);
+  }
 
   const resolved = await resolveVirtualKey(virtualKey);
-  if (!resolved) return json({ error: "Invalid API key" }, 401);
+  if (!resolved) {
+    console.error("Invalid key provided " + virtualKey);
+    return json({ error: "Invalid API key" }, 401);
+  }
 
   const realKey = process.env[PROVIDER_ENV_KEYS[provider]];
-  if (!realKey) return json({ error: "Provider not configured" }, 500);
+  if (!realKey) {
+    console.error("Provider not configured " + provider);
+    return json({ error: "Provider not configured" }, 500);
+  }
 
   // Build upstream URL, stripping Next.js catch-all `path` params
   const url = new URL(`${baseUrl}${restPath}`);

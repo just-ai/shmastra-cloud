@@ -85,7 +85,7 @@ async function getVersion(
     .from("sandboxes")
     .select("version")
     .eq("sandbox_id", sandboxId)
-    .single();
+    .maybeSingle();
   if (error) throw error;
   return data?.version ?? null;
 }
