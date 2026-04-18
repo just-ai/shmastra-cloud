@@ -29,14 +29,25 @@ export default async function ({ sandbox, log, supabase }: UpdateContext) {
   const virtualKey = userData?.virtual_key;
   if (!virtualKey) throw new Error("User has no virtual_key");
 
-  const corsOrigin = `https://${process.env.VERCEL_URL}`;
-  log(`Refreshing daemon envs: CORS_ORIGIN=${corsOrigin}, MASTRA_AUTH_TOKEN=${virtualKey.slice(0, 10)}...`);
+  const appUrl = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL}`;
+  // Mirror the env set baked into lib/sandbox.ts::provisionSandbox so the
+  // daemon has the same shape as a freshly created sandbox.
+  const envs = {
+    CORS_ORIGIN: appUrl,
+    MASTRA_AUTH_TOKEN: virtualKey,
+    OPENAI_BASE_URL: `${appUrl}/api/gateway/openai`,
+    ANTHROPIC_BASE_URL: `${appUrl}/api/gateway/anthropic`,
+    GEMINI_BASE_URL: `${appUrl}/api/gateway/gemini`,
+    GOOGLE_GEMINI_BASE_URL: `${appUrl}/api/gateway/gemini`,
+    GOOGLE_GENERATIVE_BASE_URL: `${appUrl}/api/gateway/gemini`,
+    COMPOSIO_BASE_URL: `${appUrl}/api/gateway/composio`,
+  };
+  log(`Refreshing daemon envs: appUrl=${appUrl}, MASTRA_AUTH_TOKEN=${virtualKey.slice(0, 10)}...`);
 
   // commands.run goes through enrichSandbox, which merges daemon envs + our
-  // overrides. Caller envs win, so CORS_ORIGIN/MASTRA_AUTH_TOKEN here replace
-  // whatever the daemon had.
+  // overrides. Caller envs win, so these replace whatever the daemon had.
   await sandbox.commands.run("pm2 kill 2>/dev/null || true; /home/user/start.sh", {
-    envs: { CORS_ORIGIN: corsOrigin, MASTRA_AUTH_TOKEN: virtualKey },
+    envs,
     timeoutMs: 60_000,
   });
 }

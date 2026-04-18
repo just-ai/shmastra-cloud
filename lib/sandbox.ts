@@ -102,7 +102,7 @@ async function ensureSandboxAppRunning(sandbox: Sandbox) {
 }
 
 async function provisionSandbox(userId: string) {
-  const domain = process.env.VERCEL_URL ?? "localhost:3000";
+  const domain = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL ?? "localhost:3000";
   const protocol = domain.startsWith("localhost") ? "http" : "https";
   const appUrl = `${protocol}://${domain}`;
 
