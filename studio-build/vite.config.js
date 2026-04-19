@@ -66,26 +66,46 @@ export default defineConfig({
             return studioEnv[key] || "";
           });
 
+          // Insert shmastra.js right after the first </script> so it runs
+          // before Studio's module script (which makes authed requests).
+          // NOTE: must happen BEFORE the auth-token injection below — otherwise
+          // the auth-token's own </script> becomes the "first" one and shmastra.js
+          // ends up sandwiched between auth-token and the original inline script.
+          if (!html.includes(shmastraScriptTag)) {
+            const firstScriptClose = "</script>";
+            const firstScriptIdx = html.indexOf(firstScriptClose);
+            if (firstScriptIdx !== -1) {
+              const insertAt = firstScriptIdx + firstScriptClose.length;
+              html =
+                html.slice(0, insertAt) +
+                `\n    ${shmastraScriptTag}` +
+                html.slice(insertAt);
+            } else if (html.includes("</head>")) {
+              html = html.replace("</head>", `  ${shmastraScriptTag}\n</head>`);
+            } else {
+              html = `${html}\n${shmastraScriptTag}\n`;
+            }
+          }
+
           // Studio HTML has no %%MASTRA_AUTH_TOKEN%% placeholder — inject a
           // dedicated script that sets window.MASTRA_AUTH_TOKEN. Runtime value
           // (`__MASTRA_AUTH_TOKEN__`) is substituted per-user in app/studio/route.ts.
-          // Must appear in <head> before shmastra.js, which reads the token to
-          // patch fetch before Studio makes any requests.
+          // Must appear BEFORE the very first <script> tag so every inline/module
+          // script in Studio's HTML sees window.MASTRA_AUTH_TOKEN already defined.
           const authTokenScriptTag =
             '<script>window.MASTRA_AUTH_TOKEN = "__MASTRA_AUTH_TOKEN__";</script>';
           if (!html.includes(authTokenScriptTag)) {
-            html = html.includes("</head>")
-              ? html.replace("</head>", `  ${authTokenScriptTag}\n</head>`)
-              : `${authTokenScriptTag}\n${html}`;
-          }
-
-          // Insert shmastra.js in <head> AFTER the auth-token script so
-          // window.MASTRA_AUTH_TOKEN is defined by the time the auth-fetch
-          // patch runs.
-          if (!html.includes(shmastraScriptTag)) {
-            html = html.includes("</head>")
-              ? html.replace("</head>", `  ${shmastraScriptTag}\n</head>`)
-              : `${html}\n${shmastraScriptTag}\n`;
+            const firstScriptIdx = html.indexOf("<script");
+            if (firstScriptIdx !== -1) {
+              html =
+                html.slice(0, firstScriptIdx) +
+                `${authTokenScriptTag}\n    ` +
+                html.slice(firstScriptIdx);
+            } else if (html.includes("</head>")) {
+              html = html.replace("</head>", `  ${authTokenScriptTag}\n</head>`);
+            } else {
+              html = `${authTokenScriptTag}\n${html}`;
+            }
           }
 
           if (!html.includes(keepaliveScriptTag)) {
