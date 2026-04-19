@@ -136,7 +136,8 @@ export function SlidePanel({
 
     // Update logs tab
     currentTab === "logs" && h(UpdateLogTab, {
-      logs, highlightPhase, hoveredPhase, setHoveredPhase,
+      logs, status: getStatus(selected),
+      highlightPhase, hoveredPhase, setHoveredPhase,
       scrollRef, logContainerRef,
     }),
 

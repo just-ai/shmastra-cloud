@@ -1,32 +1,25 @@
-import { supabase } from "../env.mjs";
 import {
-  run,
   checkAbort,
   connectSandbox,
   AbortError,
   type SandboxInstance,
   type LogFn,
 } from "../sandbox.mjs";
-import { resolveConflicts } from "./conflicts.mjs";
-import { runPatches } from "./runner.mjs";
+import {
+  fetchPhase,
+  mergePhase,
+  installPhase,
+  buildPhase,
+  applyPhase,
+  patchPhase,
+  restartPhase,
+  ensurePm2Running,
+  cleanup,
+  type UpdatePhase,
+  type PhaseCtx,
+} from "./phases/index.mjs";
 
-const MAIN_DIR = "/home/user/shmastra";
-const WORKTREE_DIR = "/home/user/merge";
-const WORKTREE_BRANCH = "merge-main";
-
-async function ensurePm2Running(sandbox: SandboxInstance, log: LogFn) {
-  // Delete all first to avoid duplicate processes
-  await run(sandbox, "pm2 delete all 2>/dev/null || true", log, { throwOnError: false });
-  await run(sandbox, "/home/user/start.sh", log, { throwOnError: false });
-}
-
-async function cleanup(sandbox: SandboxInstance, log: LogFn) {
-  await run(sandbox, `rm -rf "${WORKTREE_DIR}"`, log, { throwOnError: false });
-  await run(sandbox, `git -C "${MAIN_DIR}" worktree prune`, log, { throwOnError: false });
-  await run(sandbox, `git -C "${MAIN_DIR}" branch -D ${WORKTREE_BRANCH} 2>/dev/null || true`, log, {
-    throwOnError: false,
-  });
-}
+export { UPDATE_PHASES, type UpdatePhase } from "./phases/index.mjs";
 
 export type UpdateStatus = "pending" | "running" | "success" | "error" | "stopped";
 
@@ -37,8 +30,15 @@ export interface UpdateResult {
   error?: string;
 }
 
-export const UPDATE_PHASES = ["connect", "setup", "fetch", "merge", "install", "build", "apply", "patch", "restart"] as const;
-export type UpdatePhase = (typeof UPDATE_PHASES)[number];
+async function runPhase<R>(
+  ctx: PhaseCtx,
+  phase: Exclude<UpdatePhase, "connect">,
+  fn: (ctx: PhaseCtx) => Promise<R>,
+): Promise<R> {
+  checkAbort(ctx.signal);
+  ctx.onPhase?.(phase);
+  return fn(ctx);
+}
 
 export async function updateSandbox(
   sandboxId: string,
@@ -62,153 +62,27 @@ export async function updateSandbox(
     return { sandboxId, status: "error", elapsed: elapsed(), error: err.message };
   }
 
+  const ctx: PhaseCtx = { sandbox, sandboxId, log, signal, onPhase };
+
   try {
-    // ── setup ──
-    onPhase?.("setup");
+    const behind = await runPhase(ctx, "fetch", fetchPhase);
 
-    await run(
-      sandbox,
-      `git -C "${MAIN_DIR}" config user.email "sandbox@shmastra.ai" && git -C "${MAIN_DIR}" config user.name "Shmastra Sandbox"`,
-      log,
-      { throwOnError: false },
-    );
-
-    checkAbort(signal);
-
-    // ── fetch ──
-    onPhase?.("fetch");
-
-    await cleanup(sandbox, log);
-    await run(sandbox, `git -C "${MAIN_DIR}" merge --abort 2>/dev/null || true`, log, {
-      throwOnError: false,
-    });
-
-    await run(sandbox, `git -C "${MAIN_DIR}" add -A`, log, { throwOnError: false });
-    await run(
-      sandbox,
-      `git -C "${MAIN_DIR}" diff --cached --quiet || git -C "${MAIN_DIR}" commit -m "Local changes"`,
-      log,
-      { throwOnError: false },
-    );
-
-    checkAbort(signal);
-
-    await run(sandbox, `git -C "${MAIN_DIR}" fetch origin`, log, { throwOnError: false });
-
-    const behindResult = await run(
-      sandbox,
-      `git -C "${MAIN_DIR}" rev-list HEAD..origin/main --count`,
-      log,
-      { throwOnError: false },
-    );
-    const behind = parseInt(behindResult.stdout.trim(), 10);
     if (behind === 0) {
       log("Already up to date.");
-      if (supabase) {
-        await runPatches(sandbox, sandboxId, supabase, log, signal, () => onPhase?.("patch"));
-      }
-      onPhase?.("restart");
-      await ensurePm2Running(sandbox, log);
+      await runPhase(ctx, "patch", patchPhase);
+      await runPhase(ctx, "restart", restartPhase);
       const e = elapsed();
       log(`✓ Done in ${e.toFixed(1)}s.`);
       onStatus?.("success");
       return { sandboxId, status: "success", elapsed: e };
     }
 
-    checkAbort(signal);
-
-    // ── merge ──
-    onPhase?.("merge");
-
-    log(`${behind} commit(s) behind origin/main, updating...`);
-
-    await run(
-      sandbox,
-      `git -C "${MAIN_DIR}" worktree add -b ${WORKTREE_BRANCH} "${WORKTREE_DIR}" HEAD`,
-      log,
-    );
-
-    await run(sandbox, `cp "${MAIN_DIR}/.env" "${WORKTREE_DIR}/.env" 2>/dev/null || true`, log, { throwOnError: false });
-
-    const mergeResult = await run(
-      sandbox,
-      `git -C "${WORKTREE_DIR}" merge origin/main --no-edit 2>&1 || true`,
-      log,
-      { throwOnError: false },
-    );
-    const mergeOutput = mergeResult.stdout + mergeResult.stderr;
-
-    if (mergeOutput.includes("CONFLICT") || mergeOutput.includes("fix conflicts")) {
-      log("⚠ Merge conflicts, resolving...");
-      checkAbort(signal);
-      await resolveConflicts(sandbox, WORKTREE_DIR, log);
-    }
-
-    checkAbort(signal);
-
-    // ── install ──
-    onPhase?.("install");
-
-    await run(sandbox, `cd "${WORKTREE_DIR}" && pnpm install`, log, {
-      throwOnError: true,
-      timeoutMs: 180_000,
-    });
-
-    checkAbort(signal);
-
-    // ── build ──
-    onPhase?.("build");
-
-    await run(sandbox, `cd "${WORKTREE_DIR}" && (pnpm dry-run > /tmp/dry-run.log 2>&1; echo $? > /tmp/dry-run-exit)`, log, {
-      timeoutMs: 180_000,
-    });
-    const dryRunLog = await sandbox.files.read("/tmp/dry-run.log", { user: "user" }).catch(() => "");
-    if (dryRunLog.trim()) log(dryRunLog.trim());
-    const dryRunExit = (await sandbox.files.read("/tmp/dry-run-exit", { user: "user" }).catch(() => "1")).trim();
-    if (dryRunExit !== "0") {
-      throw new Error(`dry-run failed (exit ${dryRunExit})`);
-    }
-
-    checkAbort(signal);
-
-    await run(
-      sandbox,
-      `git -C "${WORKTREE_DIR}" add -A && git -C "${WORKTREE_DIR}" diff --cached --quiet || git -C "${WORKTREE_DIR}" commit -m "Update lockfile after merge"`,
-      log,
-      { throwOnError: false },
-    );
-
-    // ── apply ──
-    onPhase?.("apply");
-
-    checkAbort(signal);
-
-    await run(sandbox, "pm2 delete all 2>/dev/null || true", log, { throwOnError: false });
-    await run(
-      sandbox,
-      "kill -9 $(pgrep -x node) $(pgrep -x pnpm) $(pgrep -x esbuild) 2>/dev/null || true",
-      log,
-      { throwOnError: false },
-    );
-
-    await run(sandbox, `git -C "${MAIN_DIR}" merge ${WORKTREE_BRANCH} --ff-only`, log);
-
-    await run(sandbox, `cd "${MAIN_DIR}" && pnpm install`, log, {
-      throwOnError: false,
-      timeoutMs: 180_000,
-    });
-
-    await cleanup(sandbox, log);
-
-    // ── patch ──
-    if (supabase) {
-      await runPatches(sandbox, sandboxId, supabase, log, signal, () => onPhase?.("patch"));
-    }
-
-    // ── restart ──
-    onPhase?.("restart");
-
-    await ensurePm2Running(sandbox, log);
+    await runPhase(ctx, "merge", mergePhase);
+    await runPhase(ctx, "install", installPhase);
+    await runPhase(ctx, "build", buildPhase);
+    await runPhase(ctx, "apply", applyPhase);
+    await runPhase(ctx, "patch", patchPhase);
+    await runPhase(ctx, "restart", restartPhase);
 
     const e = elapsed();
     log(`✓ Updated in ${e.toFixed(1)}s.`);
@@ -221,8 +95,14 @@ export async function updateSandbox(
     } else {
       log(`✗ Error: ${err.message}`);
     }
-    await cleanup(sandbox, log);
-    await ensurePm2Running(sandbox, log);
+    // Cleanup is best-effort — never let it mask the terminal status broadcast, or
+    // the UI will be stuck on "running" forever.
+    try {
+      await cleanup(sandbox, log);
+      await ensurePm2Running(sandbox, log);
+    } catch (cleanupErr: any) {
+      log(`✗ Cleanup/restart failed: ${cleanupErr.message}`);
+    }
     const e = elapsed();
     const status: UpdateStatus = stopped ? "stopped" : "error";
     onStatus?.(status);

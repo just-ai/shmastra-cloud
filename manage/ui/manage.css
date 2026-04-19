@@ -57,6 +57,16 @@ body {
   border-radius: 3px;
 }
 
+.text-shimmer {
+  background: linear-gradient(90deg, var(--text-3) 0%, var(--text-0) 50%, var(--text-3) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
 ::-webkit-scrollbar { width: 6px; height: 2px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }

@@ -59,7 +59,14 @@ export function handleUpdateOne(req: Request, res: Response) {
     (status) => broadcast("status", { sandboxId, status }),
     ac.signal,
     (phase) => { currentPhases.set(sandboxId, phase); broadcast("phase", { sandboxId, phase }); },
-  ).finally(() => { runningUpdates.delete(sandboxId); currentPhases.delete(sandboxId); });
+  )
+    .catch((err: any) => {
+      // Safety net: updater should broadcast a terminal status itself, but if it threw
+      // past its own handlers we'd otherwise leave the UI stuck on "running".
+      broadcast("log", { sandboxId, message: `✗ Update crashed: ${err?.message ?? err}`, phase: null });
+      broadcast("status", { sandboxId, status: "error" });
+    })
+    .finally(() => { runningUpdates.delete(sandboxId); currentPhases.delete(sandboxId); });
 }
 
 export function handleStopOne(req: Request, res: Response) {
@@ -98,6 +105,10 @@ export function handleUpdateAll(_req: Request, res: Response) {
             ac.signal,
             (phase) => { currentPhases.set(id, phase); broadcast("phase", { sandboxId: id, phase }); },
           );
+        } catch (err: any) {
+          // Safety net — see handleUpdateOne.
+          broadcast("log", { sandboxId: id, message: `✗ Update crashed: ${err?.message ?? err}`, phase: null });
+          broadcast("status", { sandboxId: id, status: "error" });
         } finally {
           runningUpdates.delete(id);
           currentPhases.delete(id);

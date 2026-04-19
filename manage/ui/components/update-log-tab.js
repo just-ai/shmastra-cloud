@@ -1,15 +1,20 @@
 import { createElement as h } from "react";
 
-export function UpdateLogTab({ logs, highlightPhase, hoveredPhase, setHoveredPhase, scrollRef, logContainerRef }) {
+export function UpdateLogTab({ logs, status, highlightPhase, hoveredPhase, setHoveredPhase, scrollRef, logContainerRef }) {
   return h("div", {
     ref: logContainerRef,
     style: { flex: 1, overflow: "auto", padding: "8px 0", background: "var(--bg-0)" },
   },
     logs.length === 0
-      ? h("div", {
-          className: "mono",
-          style: { color: "var(--text-3)", fontSize: "11px", textAlign: "center", padding: "32px 0" },
-        }, "Update not started. Click \"update\" to pull latest changes.")
+      ? status === "running"
+        ? h("div", {
+            className: "mono text-shimmer",
+            style: { fontSize: "11px", textAlign: "center", padding: "32px 0" },
+          }, "Connecting to sandbox…")
+        : h("div", {
+            className: "mono",
+            style: { color: "var(--text-3)", fontSize: "11px", textAlign: "center", padding: "32px 0" },
+          }, "Update not started. Click \"update\" to pull latest changes.")
       : logs.map((entry, i) => {
           const hl = highlightPhase && entry.phase === highlightPhase;
           return h("div", {

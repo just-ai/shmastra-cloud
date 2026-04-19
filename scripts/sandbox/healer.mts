@@ -387,7 +387,10 @@ pm2.connect((err: Error | null) => {
     log("Health check failed, retrying in 10s...");
     await sleep(HEALTH_RETRY_MS);
 
-    if (busy.value) return;
+    if (busy.value) {
+      log("Retry skipped: another handler is already healing/watching.");
+      return;
+    }
     if (await isServerHealthy()) {
       log("Health check recovered after retry, server is OK.");
       return;
@@ -416,6 +419,7 @@ pm2.connect((err: Error | null) => {
 
       busy.value = true;
       try {
+        log(`pm2 reported exit of ${APP_NAME}, waiting up to 30s for pm2 to settle...`);
         // Poll until pm2 settles (online = recovered, errored/stopped = gave up)
         const POLL_INTERVAL = 2_000;
         const POLL_TIMEOUT = 30_000;
@@ -424,16 +428,28 @@ pm2.connect((err: Error | null) => {
         while (Date.now() < deadline) {
           await sleep(POLL_INTERVAL);
           const info = await describeApp();
-          if (!info) return;
+          if (!info) {
+            log("pm2 describe returned empty, process gone — giving up.");
+            return;
+          }
           const status = info.pm2_env?.status;
-          if (status === "online") return; // pm2 recovered on its own
+          if (status === "online") {
+            log("pm2 recovered shmastra on its own, back online.");
+            return;
+          }
           if (status === "errored" || status === "stopped") break; // pm2 gave up
         }
 
         const info = await describeApp();
-        if (!info) return;
+        if (!info) {
+          log("pm2 describe returned empty after polling — giving up.");
+          return;
+        }
         const status = info.pm2_env?.status;
-        if (status === "online" || status === "launching") return;
+        if (status === "online" || status === "launching") {
+          log(`pm2 settled with status=${status}, no heal needed.`);
+          return;
+        }
 
         // Server is errored/stopped — pm2 gave up
         await heal();
