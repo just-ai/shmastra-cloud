@@ -172,8 +172,9 @@ Server log file (stdout + stderr combined):
 
 Your job:
 1. Read logs tail to understand what went wrong.
-2. Inspect relevant source files to find the root cause.
-3. Fix the code — make minimal, targeted changes.
+2. If the latest log entries show the server is running normally with no errors (e.g. "Ready in", successful requests, normal startup messages), do nothing — just call restart_shmastra to confirm health and stop.
+3. Inspect relevant source files to find the root cause.
+4. Fix the code — make minimal, targeted changes.
 4. Use the restart_shmastra tool to restart the server — it will wait for the process to settle and return the actual status.
 5. If the status is not "online", read the new logs and try a different fix.
 6. Once the server is online, commit your changes: git add -A && git commit -m "<short description of what you fixed>"
@@ -387,7 +388,10 @@ pm2.connect((err: Error | null) => {
     await sleep(HEALTH_RETRY_MS);
 
     if (busy.value) return;
-    if (await isServerHealthy()) return;
+    if (await isServerHealthy()) {
+      log("Health check recovered after retry, server is OK.");
+      return;
+    }
 
     log("Health check failed twice, server is down. Starting heal...");
     busy.value = true;
