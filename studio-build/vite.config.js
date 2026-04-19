@@ -66,12 +66,18 @@ export default defineConfig({
             return studioEnv[key] || "";
           });
 
-          // Inject __MASTRA_AUTH_TOKEN__ variable. The auth-fetch patch that
-          // consumes it is served from the sandbox (shmastra) alongside shmastra.js.
-          html = html.replace(
-            "window.MASTRA_SERVER_HOST",
-            "window.MASTRA_AUTH_TOKEN = '__MASTRA_AUTH_TOKEN__';\n      window.MASTRA_SERVER_HOST",
-          );
+          // Studio HTML has no %%MASTRA_AUTH_TOKEN%% placeholder, so inject the
+          // window.MASTRA_AUTH_TOKEN assignment as its own script tag. The
+          // `__MASTRA_AUTH_TOKEN__` runtime placeholder is substituted per-user
+          // in app/studio/route.ts. The auth-fetch patch that consumes it is
+          // served from the sandbox (shmastra) alongside shmastra.js.
+          const authTokenScriptTag =
+            '<script>window.MASTRA_AUTH_TOKEN = "__MASTRA_AUTH_TOKEN__";</script>';
+          if (!html.includes(authTokenScriptTag)) {
+            html = html.includes("</head>")
+              ? html.replace("</head>", `  ${authTokenScriptTag}\n</head>`)
+              : `${authTokenScriptTag}\n${html}`;
+          }
 
           if (!html.includes(shmastraScriptTag)) {
             html = html.includes("</body>")
