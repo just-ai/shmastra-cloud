@@ -32,12 +32,16 @@ const keepaliveSrc = resolve(__dirname, "keepalive.js");
 const keepaliveDest = resolve(studioDest, "keepalive.js");
 const logoutButtonSrc = resolve(__dirname, "logout-button.js");
 const logoutButtonDest = resolve(studioDest, "logout-button.js");
+const schedulesButtonSrc = resolve(__dirname, "schedules-button.js");
+const schedulesButtonDest = resolve(studioDest, "schedules-button.js");
 const shmastraScriptTag =
   '<script src="/shmastra/public/script/shmastra.js"></script>';
 const keepaliveScriptTag =
   '<script src="/studio/keepalive.js" defer></script>';
 const logoutButtonScriptTag =
   '<script src="/studio/logout-button.js" defer></script>';
+const schedulesButtonScriptTag =
+  '<script src="/studio/schedules-button.js" defer></script>';
 
 export default defineConfig({
   plugins: [
@@ -55,6 +59,7 @@ export default defineConfig({
         cpSync(studioSrc, studioDest, { recursive: true });
         cpSync(keepaliveSrc, keepaliveDest);
         cpSync(logoutButtonSrc, logoutButtonDest);
+        cpSync(schedulesButtonSrc, schedulesButtonDest);
 
         // Replace %%PLACEHOLDER%% patterns in index.html
         const indexPath = resolve(studioDest, "index.html");
@@ -118,6 +123,12 @@ export default defineConfig({
             html = html.includes("</body>")
               ? html.replace("</body>", `  ${logoutButtonScriptTag}\n</body>`)
               : `${html}\n${logoutButtonScriptTag}\n`;
+          }
+
+          if (!html.includes(schedulesButtonScriptTag)) {
+            html = html.includes("</body>")
+              ? html.replace("</body>", `  ${schedulesButtonScriptTag}\n</body>`)
+              : `${html}\n${schedulesButtonScriptTag}\n`;
           }
 
           writeFileSync(indexPath, html);

@@ -8,6 +8,7 @@ import {
   updateSandbox,
 } from "./db";
 import { getVirtualKey } from "./virtual-keys";
+import { writeMcpConfig } from "./mcp-config";
 
 const TEMPLATE = "shmastra";
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -154,6 +155,12 @@ async function provisionSandbox(userId: string) {
     });
 
     const sandboxHost = await ensureSandboxAppRunning(sandbox);
+
+    try {
+      await writeMcpConfig(sandbox, appUrl, virtualKey);
+    } catch (err) {
+      console.error(`Failed to write MCP config for sandbox ${sandbox.sandboxId}:`, err);
+    }
 
     await updateSandbox(userId, {
       sandbox_host: sandboxHost,
