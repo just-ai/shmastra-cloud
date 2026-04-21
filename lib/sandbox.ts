@@ -9,6 +9,7 @@ import {
 } from "./db";
 import { getVirtualKey } from "./virtual-keys";
 import { writeMcpConfig } from "./mcp-config";
+import { writeSchedulerSkill } from "./skill-injection";
 import { MASTRA_API_PREFIX } from "./mastra-constants";
 
 const TEMPLATE = "shmastra";
@@ -161,6 +162,12 @@ async function provisionSandbox(userId: string) {
       await writeMcpConfig(sandbox, appUrl, virtualKey);
     } catch (err) {
       console.error(`Failed to write MCP config for sandbox ${sandbox.sandboxId}:`, err);
+    }
+
+    try {
+      await writeSchedulerSkill(sandbox);
+    } catch (err) {
+      console.error(`Failed to write scheduler skill for sandbox ${sandbox.sandboxId}:`, err);
     }
 
     await updateSandbox(userId, {

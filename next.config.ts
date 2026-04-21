@@ -3,6 +3,11 @@ import { MASTRA_API_PREFIX } from "./lib/mastra-constants";
 
 const nextConfig: NextConfig = {
   ...(process.env.VERCEL_URL && { allowedDevOrigins: [process.env.VERCEL_URL] }),
+  outputFileTracingIncludes: {
+    // lib/sandbox.ts reads the scheduler skill from disk when provisioning.
+    // Trace the file so Vercel ships it with the serverless bundle.
+    "/**": ["./lib/skills/**/*.md"],
+  },
   env: {
     MASTRA_API_PREFIX,
     MASTRA_STUDIO_BASE_PATH: "/studio",
