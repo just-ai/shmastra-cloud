@@ -10,7 +10,10 @@ export interface SandboxEnvContext {
   appUrl: string;
 }
 
-async function resolveSandboxEnvContext(
+// Exported for patches that need user/sandbox/appUrl for non-env side effects
+// (writing config files, skill injection, etc.). For patches that only refresh
+// daemon envs, use `addDaemonEnvs` below.
+export async function resolveSandboxEnvContext(
   ctx: UpdateContext,
 ): Promise<SandboxEnvContext | null> {
   const { sandbox: e2b, supabase } = ctx;
