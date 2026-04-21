@@ -374,12 +374,13 @@
             el(
               "div",
               { style: { fontWeight: "500" } },
-              s.name || s.path,
+              s.name || (s.kind === "workflow" ? "workflow: " + s.workflow_id : s.path),
             ),
             el(
               "div",
               { class: "sx-muted" },
-              s.cron_expression + " · " + s.timezone + " · last run: " + formatDate(s.last_run_at),
+              (s.kind === "workflow" ? "workflow · " : "") +
+                s.cron_expression + " · " + s.timezone + " · last run: " + formatDate(s.last_run_at),
             ),
           ],
         ),
@@ -493,29 +494,47 @@
       body.appendChild(el("div", { class: "sx-muted" }, "No runs yet."));
       return;
     }
+    var isWorkflow = schedule && schedule.kind === "workflow";
     state.runs.forEach(function (r) {
-      var status = r.status_code
-        ? String(r.status_code)
-        : r.error_message
-        ? "error"
-        : "pending";
-      var row = el("details", { class: "sx-row", style: { display: "block" } }, [
-        el(
-          "summary",
-          null,
-          formatDate(r.sent_at) +
-            " · " +
-            status +
-            (r.duration_ms != null ? " · " + r.duration_ms + "ms" : ""),
-        ),
-        r.error_message
-          ? el("div", { class: "sx-error", text: r.error_message })
-          : null,
-        r.response_snippet
-          ? el("pre", { text: r.response_snippet })
-          : null,
-      ]);
-      body.appendChild(row);
+      var status;
+      if (isWorkflow) {
+        status = r.workflow_status || (r.error_message ? "error" : "pending");
+      } else {
+        status = r.status_code
+          ? String(r.status_code)
+          : r.error_message
+          ? "error"
+          : "pending";
+      }
+      var summaryText =
+        formatDate(r.sent_at) +
+        " · " +
+        status +
+        (r.duration_ms != null ? " · " + r.duration_ms + "ms" : "");
+      var children = [el("summary", null, summaryText)];
+      if (r.error_message) {
+        children.push(el("div", { class: "sx-error", text: r.error_message }));
+      }
+      if (isWorkflow) {
+        if (r.workflow_error) {
+          children.push(el("div", { class: "sx-error", text: r.workflow_error }));
+        }
+        if (r.workflow_result !== null && r.workflow_result !== undefined) {
+          children.push(
+            el("pre", { text: JSON.stringify(r.workflow_result, null, 2) }),
+          );
+        }
+        if (r.workflow_run_id) {
+          children.push(
+            el("div", { class: "sx-muted", text: "run id: " + r.workflow_run_id }),
+          );
+        }
+      } else if (r.response_snippet) {
+        children.push(el("pre", { text: r.response_snippet }));
+      }
+      body.appendChild(
+        el("details", { class: "sx-row", style: { display: "block" } }, children),
+      );
     });
   }
 

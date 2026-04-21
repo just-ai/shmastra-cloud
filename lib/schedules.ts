@@ -1,4 +1,7 @@
 import { db } from "./db";
+import { MASTRA_API_PREFIX } from "./mastra-constants";
+
+export type ScheduleKind = "raw" | "workflow";
 
 export type Schedule = {
   id: string;
@@ -10,6 +13,8 @@ export type Schedule = {
   timezone: string;
   cron_job_name: string;
   enabled: boolean;
+  kind: ScheduleKind;
+  workflow_id: string | null;
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
@@ -25,6 +30,11 @@ export type ScheduleRun = {
   status_code: number | null;
   response_snippet: string | null;
   error_message: string | null;
+  workflow_run_id: string | null;
+  workflow_status: string | null;
+  workflow_result: unknown;
+  workflow_error: string | null;
+  last_polled_at: string | null;
 };
 
 export type CreateScheduleInput = {
@@ -42,6 +52,16 @@ export type UpdateSchedulePatch = Partial<
     "path" | "body" | "cron_expression" | "timezone" | "name" | "enabled"
   >
 >;
+
+export type CreateWorkflowScheduleInput = {
+  workflow_id: string;
+  input_data?: unknown;
+  resource_id?: string;
+  cron_expression: string;
+  timezone?: string;
+  name?: string | null;
+  enabled?: boolean;
+};
 
 const CRON_FIELD = /^(\*|[-,/\w*]+)$/;
 
@@ -94,6 +114,20 @@ function validateBody(body: unknown): unknown {
   return body;
 }
 
+const WORKFLOW_ID_RE = /^[A-Za-z0-9_.-]+$/;
+
+function validateWorkflowId(workflowId: unknown): string {
+  if (typeof workflowId !== "string" || workflowId.length === 0) {
+    throw new ScheduleValidationError("workflow_id is required");
+  }
+  if (workflowId.length > 256 || !WORKFLOW_ID_RE.test(workflowId)) {
+    throw new ScheduleValidationError(
+      "workflow_id must match /^[A-Za-z0-9_.-]+$/ and be ≤256 chars",
+    );
+  }
+  return workflowId;
+}
+
 export class ScheduleValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -138,26 +172,64 @@ export async function createSchedule(
   userId: string,
   input: CreateScheduleInput,
 ): Promise<Schedule> {
-  const path = validatePath(input.path);
+  return insertSchedule(userId, {
+    path: validatePath(input.path),
+    body: validateBody(input.body),
+    cron_expression: validateCron(input.cron_expression),
+    timezone: validateTimezone(input.timezone),
+    name: typeof input.name === "string" ? input.name : null,
+    enabled: input.enabled ?? true,
+    kind: "raw",
+    workflow_id: null,
+  });
+}
+
+export async function createWorkflowSchedule(
+  userId: string,
+  input: CreateWorkflowScheduleInput,
+): Promise<Schedule> {
+  const workflow_id = validateWorkflowId(input.workflow_id);
   const cron_expression = validateCron(input.cron_expression);
   const timezone = validateTimezone(input.timezone);
-  const body = validateBody(input.body);
-  const enabled = input.enabled ?? true;
-  const name = typeof input.name === "string" ? input.name : null;
+  const body: Record<string, unknown> = {};
+  if (input.input_data !== undefined) body.inputData = input.input_data;
+  if (typeof input.resource_id === "string" && input.resource_id.length > 0) {
+    body.resourceId = input.resource_id;
+  }
+  const path = `${MASTRA_API_PREFIX}/workflows/${encodeURIComponent(workflow_id)}/start-async`;
+  return insertSchedule(userId, {
+    path,
+    body,
+    cron_expression,
+    timezone,
+    name: typeof input.name === "string" ? input.name : null,
+    enabled: input.enabled ?? true,
+    kind: "workflow",
+    workflow_id,
+  });
+}
 
+async function insertSchedule(
+  userId: string,
+  row: {
+    path: string;
+    body: unknown;
+    cron_expression: string;
+    timezone: string;
+    name: string | null;
+    enabled: boolean;
+    kind: ScheduleKind;
+    workflow_id: string | null;
+  },
+): Promise<Schedule> {
   const id = crypto.randomUUID();
   const { data, error } = await db()
     .from("schedules")
     .insert({
       id,
       user_id: userId,
-      name,
-      path,
-      body,
-      cron_expression,
-      timezone,
+      ...row,
       cron_job_name: cronJobName(id),
-      enabled,
     })
     .select()
     .single();

@@ -8,6 +8,7 @@ config({ path: resolve(__dirname, "../.env.local") });
 config({ path: resolve(__dirname, "../.env") });
 
 // Build-time defaults for MASTRA_* variables (same as next.config.ts env)
+// MASTRA_API_PREFIX value must stay in sync with lib/mastra-constants.ts
 const mastraDefaults = {
   MASTRA_SERVER_HOST: "__SANDBOX_HOST__",
   MASTRA_SERVER_PORT: "443",

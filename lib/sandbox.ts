@@ -9,6 +9,7 @@ import {
 } from "./db";
 import { getVirtualKey } from "./virtual-keys";
 import { writeMcpConfig } from "./mcp-config";
+import { MASTRA_API_PREFIX } from "./mastra-constants";
 
 const TEMPLATE = "shmastra";
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -120,7 +121,7 @@ async function provisionSandbox(userId: string) {
       },
       envs: {
         MASTRA_STUDIO_BASE_PATH: "/studio",
-        MASTRA_API_PREFIX: "/api/mastra",
+        MASTRA_API_PREFIX,
         MASTRA_AUTH_TOKEN: virtualKey,
         CORS_ORIGIN: appUrl,
         USER_ID: userId,

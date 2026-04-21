@@ -1,5 +1,6 @@
 import {
   createSchedule,
+  createWorkflowSchedule,
   deleteSchedule,
   getSchedule,
   listRuns,
@@ -8,6 +9,7 @@ import {
   ScheduleValidationError,
   updateSchedule,
   type CreateScheduleInput,
+  type CreateWorkflowScheduleInput,
   type UpdateSchedulePatch,
 } from "./schedules";
 
@@ -76,9 +78,49 @@ const TOOLS: Tool[] = [
     handler: async (userId, args) => getSchedule(userId, requireString(args, "id")),
   },
   {
+    name: "create_workflow_schedule",
+    description:
+      "Schedule a Mastra workflow to run on cron. The cloud composes the workflow URL for you — you only provide the workflow id and its input. Runs are always fire-and-forget: the scheduler starts the run, records its run id, and polls until the workflow completes (see `list_runs` for status / result / error).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workflow_id: {
+          type: "string",
+          description:
+            "Workflow id as registered in Mastra (e.g. 'nightlyReport'). Must match /^[A-Za-z0-9_.-]+$/.",
+        },
+        input_data: {
+          description:
+            "Value passed as `inputData` to the workflow. Any JSON-serialisable value.",
+        },
+        resource_id: {
+          type: "string",
+          description: "Optional resourceId override for the workflow run.",
+        },
+        cron_expression: {
+          type: "string",
+          description: "5- or 6-field cron expression, UTC.",
+        },
+        timezone: {
+          type: "string",
+          description: "IANA timezone (e.g. 'America/New_York'). Defaults to 'UTC'.",
+        },
+        name: { type: "string", description: "Optional display name." },
+        enabled: { type: "boolean", description: "Whether to fire (defaults to true)." },
+      },
+      required: ["workflow_id", "cron_expression"],
+      additionalProperties: false,
+    },
+    handler: async (userId, args) =>
+      createWorkflowSchedule(
+        userId,
+        args as unknown as CreateWorkflowScheduleInput,
+      ),
+  },
+  {
     name: "create_schedule",
     description:
-      "Create a schedule that periodically POSTs to `path` on the user's sandbox. The Authorization header is injected server-side — do not pass secrets in the body. `cron_expression` is evaluated in UTC; `timezone` is informational metadata.",
+      "Escape hatch: create a schedule that POSTs to an arbitrary `path` on the user's sandbox. For workflows, prefer `create_workflow_schedule`. The Authorization header is injected server-side — do not pass secrets in the body. `cron_expression` is evaluated in UTC; `timezone` is informational metadata.",
     inputSchema: {
       type: "object",
       properties: {
