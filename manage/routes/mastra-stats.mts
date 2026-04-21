@@ -1,8 +1,10 @@
+import { createRequire } from "node:module";
 import type { Request, Response } from "express";
 import { MastraClient } from "@mastra/client-js";
 import { Sandbox } from "e2b";
 import { supabase } from "../env.mjs";
-import { MASTRA_API_PREFIX } from "../../lib/mastra-constants.js";
+
+const { MASTRA_API_PREFIX } = createRequire(import.meta.url)("@/lib/mastra-constants") as typeof import("@/lib/mastra-constants");
 
 interface SandboxRow {
   sandbox_id: string;

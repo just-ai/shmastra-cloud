@@ -11,6 +11,7 @@ import { getVirtualKey } from "./virtual-keys";
 import { writeMcpConfig } from "./mcp-config";
 import { writeSchedulerSkill } from "./skill-injection";
 import { MASTRA_API_PREFIX } from "./mastra-constants";
+import { getAppUrl } from "./app-url";
 
 const TEMPLATE = "shmastra";
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -105,9 +106,7 @@ async function ensureSandboxAppRunning(sandbox: Sandbox) {
 }
 
 async function provisionSandbox(userId: string) {
-  const domain = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL ?? "localhost:3000";
-  const protocol = domain.startsWith("localhost") ? "http" : "https";
-  const appUrl = `${protocol}://${domain}`;
+  const appUrl = getAppUrl();
 
   try {
     const user = await getUserById(userId);

@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Sandbox } from "e2b";
 import { run as sharedRun } from "../sandbox.mjs";
+import { resolveSandboxEnvContext, type SandboxEnvContext } from "./utils.mjs";
 
 export type SandboxInstance = Awaited<ReturnType<typeof Sandbox.connect>>;
 
@@ -19,6 +20,8 @@ export interface UpdateContext {
   run: RunFn;
   log: LogFn;
   supabase: SupabaseClient;
+  // User + sandbox DB rows + appUrl, resolved once before patches run.
+  env: SandboxEnvContext;
   // Accumulate env vars to be applied once the restart phase runs, so patches
   // don't each do their own pm2 kill + start.sh.
   addEnvs: (envs: Record<string, string>) => void;
@@ -114,12 +117,14 @@ export async function runPatches(
   onPhase?.();
   log(`${pending.length} pending update(s): ${pending.map((u) => u.id).join(", ")}`);
 
+  const env = await resolveSandboxEnvContext(sandbox, supabase);
   const run = makeRunFn(sandbox, log, signal);
   const ctx: UpdateContext = {
     sandbox,
     run,
     log,
     supabase,
+    env,
     addEnvs: (envs) => Object.assign(collectedEnvs, envs),
   };
   let applied = 0;
