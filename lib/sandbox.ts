@@ -126,6 +126,8 @@ async function provisionSandbox(userId: string) {
         OPENAI_API_KEY: virtualKey,
         ANTHROPIC_API_KEY: virtualKey,
         GEMINI_API_KEY: virtualKey,
+        GOOGLE_GEMINI_API_KEY: virtualKey,
+        GOOGLE_GENERATIVE_AI_API_KEY: virtualKey,
         COMPOSIO_API_KEY: virtualKey,
         COMPOSIO_BASE_URL: `${appUrl}/api/gateway/composio`,
         OPENAI_BASE_URL: `${appUrl}/api/gateway/openai`,

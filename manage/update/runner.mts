@@ -3,6 +3,7 @@ import { resolve, dirname, basename } from "path";
 import { fileURLToPath } from "url";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Sandbox } from "e2b";
+import { run as sharedRun } from "../sandbox.mjs";
 
 export type SandboxInstance = Awaited<ReturnType<typeof Sandbox.connect>>;
 
@@ -18,6 +19,9 @@ export interface UpdateContext {
   run: RunFn;
   log: LogFn;
   supabase: SupabaseClient;
+  // Accumulate env vars to be applied once the restart phase runs, so patches
+  // don't each do their own pm2 kill + start.sh.
+  addEnvs: (envs: Record<string, string>) => void;
 }
 
 interface UpdateEntry {
@@ -28,17 +32,10 @@ interface UpdateEntry {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PATCHES_DIR = resolve(__dirname, "../../scripts/patches");
 
-function makeRunFn(sandbox: SandboxInstance, log: LogFn): RunFn {
-  return async (cmd, { timeoutMs = 120_000, throwOnError = true } = {}) => {
-    log(`$ ${cmd}`);
-    const result = await sandbox.commands.run(cmd, { timeoutMs, user: "user" });
-    if (result.stdout.trim()) log(`  stdout: ${result.stdout.trim()}`);
-    if (result.stderr.trim()) log(`  stderr: ${result.stderr.trim()}`);
-    if (result.exitCode !== 0 && throwOnError) {
-      throw new Error(`Command failed (exit ${result.exitCode}): ${cmd}`);
-    }
-    return result;
-  };
+function makeRunFn(sandbox: SandboxInstance, log: LogFn, signal?: AbortSignal): RunFn {
+  // Delegate to the shared run() helper so patch scripts get the same abort-
+  // on-signal behavior as update phases.
+  return (cmd, opts = {}) => sharedRun(sandbox, cmd, log, { ...opts, signal });
 }
 
 function listUpdates(): UpdateEntry[] {
@@ -90,6 +87,11 @@ async function getVersion(
   return data?.version ?? null;
 }
 
+export interface PatchesResult {
+  applied: number;
+  envs: Record<string, string>;
+}
+
 export async function runPatches(
   sandbox: SandboxInstance,
   sandboxId: string,
@@ -97,22 +99,29 @@ export async function runPatches(
   log: LogFn,
   signal?: AbortSignal,
   onPhase?: () => void,
-): Promise<number> {
+): Promise<PatchesResult> {
+  const collectedEnvs: Record<string, string> = {};
   const all = listUpdates();
-  if (all.length === 0) return 0;
+  if (all.length === 0) return { applied: 0, envs: collectedEnvs };
 
   const currentVersion = await getVersion(supabase, sandboxId);
   const pending = pendingUpdates(all, currentVersion);
 
   if (pending.length === 0) {
-    return 0;
+    return { applied: 0, envs: collectedEnvs };
   }
 
   onPhase?.();
   log(`${pending.length} pending update(s): ${pending.map((u) => u.id).join(", ")}`);
 
-  const run = makeRunFn(sandbox, log);
-  const ctx: UpdateContext = { sandbox, run, log, supabase };
+  const run = makeRunFn(sandbox, log, signal);
+  const ctx: UpdateContext = {
+    sandbox,
+    run,
+    log,
+    supabase,
+    addEnvs: (envs) => Object.assign(collectedEnvs, envs),
+  };
   let applied = 0;
 
   for (const update of pending) {
@@ -126,5 +135,5 @@ export async function runPatches(
     applied++;
   }
 
-  return applied;
+  return { applied, envs: collectedEnvs };
 }

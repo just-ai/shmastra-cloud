@@ -10,15 +10,16 @@ export async function mergePhase({ sandbox, log, signal }: PhaseCtx): Promise<vo
     sandbox,
     `git -C "${MAIN_DIR}" worktree add -b ${WORKTREE_BRANCH} "${WORKTREE_DIR}" HEAD`,
     log,
+    { signal },
   );
 
-  await run(sandbox, `cp "${MAIN_DIR}/.env" "${WORKTREE_DIR}/.env" 2>/dev/null || true`, log, { throwOnError: false });
+  await run(sandbox, `cp "${MAIN_DIR}/.env" "${WORKTREE_DIR}/.env" 2>/dev/null || true`, log, { throwOnError: false, signal });
 
   const mergeResult = await run(
     sandbox,
     `git -C "${WORKTREE_DIR}" merge origin/main --no-edit 2>&1 || true`,
     log,
-    { throwOnError: false },
+    { throwOnError: false, signal },
   );
   const mergeOutput = mergeResult.stdout + mergeResult.stderr;
 

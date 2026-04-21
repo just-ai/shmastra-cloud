@@ -1,6 +1,7 @@
 import { createRequire } from "module";
 import { execSync } from "child_process";
 import { statSync, readFileSync, writeFileSync } from "fs";
+import * as os from "os";
 
 interface Pm2Bus {
   on(event: string, cb: (data: any) => void): void;
@@ -360,6 +361,183 @@ function watchBundlingStuck(busy: { value: boolean }): void {
   log("Watching for stuck Bundling...");
 }
 
+function getPm2GodPid(): number | null {
+  try {
+    const pid = parseInt(readFileSync(`${process.env.HOME}/.pm2/pm2.pid`, "utf-8").trim(), 10);
+    return Number.isFinite(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function getAncestors(pid: number): Set<number> {
+  const ancestors = new Set<number>();
+  let p = pid;
+  while (p > 1) {
+    try {
+      const ppid = parseInt(execSync(`ps -o ppid= -p ${p}`, { encoding: "utf-8" }).trim(), 10);
+      if (!Number.isFinite(ppid) || ppid === p) break;
+      ancestors.add(ppid);
+      p = ppid;
+    } catch {
+      break;
+    }
+  }
+  return ancestors;
+}
+
+function getPm2ManagedPids(): Set<number> {
+  const pids = new Set<number>();
+  const god = getPm2GodPid();
+  if (god) pids.add(god);
+  try {
+    const out = execSync("pm2 jlist", { encoding: "utf-8", timeout: 5_000 });
+    const list = JSON.parse(out) as Array<{ pid?: number; pm2_env?: { pid?: number } }>;
+    for (const p of list) {
+      if (typeof p.pid === "number" && p.pid > 0) pids.add(p.pid);
+      if (typeof p.pm2_env?.pid === "number" && p.pm2_env.pid > 0) pids.add(p.pm2_env.pid);
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`pm2 jlist failed: ${message}`);
+  }
+  return pids;
+}
+
+function killOrphanNodeProcesses(): void {
+  const managed = getPm2ManagedPids();
+  if (managed.size === 0) {
+    log("No pm2-managed pids discovered, skipping orphan cleanup.");
+    return;
+  }
+  let pids: number[] = [];
+  try {
+    pids = execSync(`pgrep -u "$(id -un)" node || true`, { encoding: "utf-8" })
+      .trim()
+      .split("\n")
+      .map((s) => parseInt(s, 10))
+      .filter((n) => Number.isFinite(n) && n !== process.pid && !managed.has(n));
+  } catch {
+    return;
+  }
+  let killed = 0;
+  for (const pid of pids) {
+    const ancestors = getAncestors(pid);
+    let hasManagedAncestor = false;
+    for (const m of managed) {
+      if (ancestors.has(m)) {
+        hasManagedAncestor = true;
+        break;
+      }
+    }
+    if (hasManagedAncestor) continue;
+    try {
+      process.kill(pid, "SIGKILL");
+      killed++;
+    } catch {}
+  }
+  if (killed > 0) log(`Killed ${killed} orphan node process(es)`);
+}
+
+// ── Resource pressure watcher ──
+
+const PRESSURE_CHECK_MS = 15_000;
+const PRESSURE_SUSTAINED = 4; // 4 * 15s = 1 min of sustained pressure
+const MEM_PCT_LIMIT = 0.9;
+const LOAD_PER_CPU_LIMIT = 2.5;
+
+function readCgroupMemoryPct(): number | null {
+  try {
+    const usage = parseInt(readFileSync("/sys/fs/cgroup/memory.current", "utf-8").trim(), 10);
+    const limitStr = readFileSync("/sys/fs/cgroup/memory.max", "utf-8").trim();
+    const limit = limitStr === "max" ? NaN : parseInt(limitStr, 10);
+    if (Number.isFinite(usage) && Number.isFinite(limit) && limit > 0) return usage / limit;
+  } catch {}
+  try {
+    const usage = parseInt(readFileSync("/sys/fs/cgroup/memory/memory.usage_in_bytes", "utf-8").trim(), 10);
+    const limit = parseInt(readFileSync("/sys/fs/cgroup/memory/memory.limit_in_bytes", "utf-8").trim(), 10);
+    if (Number.isFinite(usage) && Number.isFinite(limit) && limit > 0 && limit < 1e15) return usage / limit;
+  } catch {}
+  return null;
+}
+
+function readLoadPerCpu(): number {
+  const [oneMin] = os.loadavg();
+  const cpus = os.cpus().length || 1;
+  return oneMin / cpus;
+}
+
+async function emergencyResourceHeal(): Promise<void> {
+  log("Resource pressure sustained, emergency heal: killing orphans and restarting shmastra.");
+  await reportStatus("healing");
+  killOrphanNodeProcesses();
+  try {
+    fixPm2Config();
+    await new Promise<void>((resolve, reject) => {
+      pm2.restart(APP_NAME, (err: Error | null) => (err ? reject(err) : resolve()));
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`Emergency pm2 restart failed: ${message}`);
+  }
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    await sleep(5_000);
+    if (await isServerHealthy()) {
+      await reportStatus("ready");
+      log("Emergency heal successful, server ready.");
+      return;
+    }
+  }
+  log("Server still unhealthy 60s after emergency heal.");
+}
+
+function watchResourcePressure(busy: { value: boolean }): void {
+  let sustained = 0;
+  setInterval(async () => {
+    if (busy.value) {
+      sustained = 0;
+      return;
+    }
+    const memPct = readCgroupMemoryPct();
+    const load = readLoadPerCpu();
+    const memHigh = memPct !== null && memPct > MEM_PCT_LIMIT;
+    const loadHigh = load > LOAD_PER_CPU_LIMIT;
+    if (memHigh || loadHigh) {
+      sustained++;
+      const memStr = memPct !== null ? `${(memPct * 100).toFixed(0)}%` : "?";
+      log(`Resource pressure ${sustained}/${PRESSURE_SUSTAINED}: mem=${memStr} load/cpu=${load.toFixed(2)}`);
+      if (sustained >= PRESSURE_SUSTAINED) {
+        sustained = 0;
+        busy.value = true;
+        try {
+          await emergencyResourceHeal();
+        } finally {
+          busy.value = false;
+        }
+      }
+    } else if (sustained > 0) {
+      sustained = 0;
+    }
+  }, PRESSURE_CHECK_MS);
+  log("Watching for resource pressure (memory/cpu)...");
+}
+
+async function reportReadyWhenHealthy(): Promise<void> {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    if (await isServerHealthy()) {
+      await reportStatus("ready");
+      log("Server healthy on startup, reported ready.");
+      return;
+    }
+    await sleep(3_000);
+  }
+  log("Server did not become healthy within 120s on startup.");
+}
+
+killOrphanNodeProcesses();
+
 // Connect to pm2 and start watchers
 pm2.connect((err: Error | null) => {
   if (err) {
@@ -369,10 +547,15 @@ pm2.connect((err: Error | null) => {
 
   log("Connected to pm2, watching for crashes...");
 
+  void reportReadyWhenHealthy();
+
   const busy = { value: false };
 
   // ── Stuck Bundling watcher ──
   watchBundlingStuck(busy);
+
+  // ── Resource pressure watcher ──
+  watchResourcePressure(busy);
 
   // ── Health check polling ──
   // If health fails twice with a 10s gap, and pm2 says process is online → heal

@@ -15,9 +15,6 @@ export default async function ({ sandbox, run, log }: UpdateContext) {
   await sandbox.files.write("/home/user/ecosystem.config.cjs", ecosystemContent);
   log("Updated ecosystem.config.cjs");
 
-  // start.sh handles: node_modules symlink, esbuild healer.mts → healer.cjs,
-  // and `pm2 startOrReload --update-env`. Without this, the new ecosystem
-  // config would reference a non-existent /home/user/healer.cjs.
   const startContent = readFileSync(resolve(SANDBOX_DIR, "start.sh"), "utf-8");
   await sandbox.files.write("/home/user/start.sh", startContent);
   await run("chmod +x /home/user/start.sh");
@@ -30,8 +27,4 @@ export default async function ({ sandbox, run, log }: UpdateContext) {
     { throwOnError: false },
   );
   log("Removed old split log files");
-
-  await run("pm2 delete all 2>/dev/null || true", { throwOnError: false });
-  await run("/home/user/start.sh");
-  log("Restarted pm2 with healer process");
 }

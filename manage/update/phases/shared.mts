@@ -13,20 +13,23 @@ export interface PhaseCtx {
   log: LogFn;
   signal?: AbortSignal;
   onPhase?: (phase: UpdatePhase) => void;
+  // Envs collected by patches during the `patch` phase, applied by `restart`.
+  pendingEnvs?: Record<string, string>;
 }
 
 export type PhaseFn = (ctx: PhaseCtx) => Promise<void>;
 
-export async function ensurePm2Running(sandbox: SandboxInstance, log: LogFn) {
+export async function ensurePm2Running(sandbox: SandboxInstance, log: LogFn, signal?: AbortSignal) {
   // Delete all first to avoid duplicate processes
-  await run(sandbox, "pm2 delete all 2>/dev/null || true", log, { throwOnError: false });
-  await run(sandbox, "/home/user/start.sh", log, { throwOnError: false });
+  await run(sandbox, "pm2 delete all 2>/dev/null || true", log, { throwOnError: false, signal });
+  await run(sandbox, "/home/user/start.sh", log, { throwOnError: false, signal });
 }
 
-export async function cleanup(sandbox: SandboxInstance, log: LogFn) {
-  await run(sandbox, `rm -rf "${WORKTREE_DIR}"`, log, { throwOnError: false });
-  await run(sandbox, `git -C "${MAIN_DIR}" worktree prune`, log, { throwOnError: false });
+export async function cleanup(sandbox: SandboxInstance, log: LogFn, signal?: AbortSignal) {
+  await run(sandbox, `rm -rf "${WORKTREE_DIR}"`, log, { throwOnError: false, signal });
+  await run(sandbox, `git -C "${MAIN_DIR}" worktree prune`, log, { throwOnError: false, signal });
   await run(sandbox, `git -C "${MAIN_DIR}" branch -D ${WORKTREE_BRANCH} 2>/dev/null || true`, log, {
     throwOnError: false,
+    signal,
   });
 }

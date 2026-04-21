@@ -1,5 +1,27 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
+export interface User {
+  id: string;
+  workos_id: string;
+  email: string;
+  virtual_key: string | null;
+  created_at: string;
+}
+
+export interface Sandbox {
+  id: string;
+  user_id: string;
+  sandbox_id: string | null;
+  sandbox_host: string | null;
+  status: string;
+  ready_token: string | null;
+  error_message: string | null;
+  version: string | null;
+  last_extended_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 let _supabase: SupabaseClient;
 
 export function db() {

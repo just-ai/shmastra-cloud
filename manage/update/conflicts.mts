@@ -63,16 +63,31 @@ ${conflictedContent}
   }
 }
 
-const SIMPLE_FILES = new Set(["package.json", "package-lock.json", "tsconfig.json", ".npmrc"]);
+const SIMPLE_FILES = new Set(["package.json", "package-lock.json", "tsconfig.json", ".npmrc", ".gitignore"]);
 const LOCKFILES = new Set(["pnpm-lock.yaml", "package-lock.json"]);
 
 export function logAgentStream(log: LogFn) {
-  return (part: any) => {
+  let buffer = "";
+  const flush = () => {
+    if (buffer.length > 0) {
+      log(buffer);
+      buffer = "";
+    }
+  };
+  const handle = (part: any) => {
     switch (part.type) {
-      case "text-delta":
-        log(part.payload.text);
+      case "text-delta": {
+        buffer += part.payload.text;
+        const idx = buffer.lastIndexOf("\n");
+        if (idx >= 0) {
+          const complete = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 1);
+          for (const line of complete.split("\n")) log(line);
+        }
         break;
+      }
       case "tool-call": {
+        flush();
         const { toolName, args } = part.payload;
         const a = args as Record<string, unknown>;
         let line: string;
@@ -94,13 +109,19 @@ export function logAgentStream(log: LogFn) {
         break;
       }
       case "tool-result":
+        flush();
         log(`→ ${String(part.payload.result).slice(0, 200)}`);
         break;
       case "error":
+        flush();
         log(`✗ Stream error: ${part.payload}`);
+        break;
+      default:
+        flush();
         break;
     }
   };
+  return { handle, flush };
 }
 
 async function resolveConflictsWithAgent(
@@ -144,10 +165,11 @@ Rules:
     `Resolve merge conflicts in these files: ${fileList}. The files are in ${workdir}.`,
   );
 
-  const handler = logAgentStream(log);
+  const { handle, flush } = logAgentStream(log);
   for await (const part of stream.fullStream) {
-    handler(part);
+    handle(part);
   }
+  flush();
 
   await run(sandbox, `git -C "${workdir}" add -A`, log, { throwOnError: false });
   await run(

@@ -136,22 +136,40 @@ export async function run(
     timeoutMs = 120_000,
     throwOnError = true,
     signal,
-  }: { timeoutMs?: number; throwOnError?: boolean; signal?: AbortSignal } = {},
+    envs,
+  }: { timeoutMs?: number; throwOnError?: boolean; signal?: AbortSignal; envs?: Record<string, string> } = {},
 ) {
   checkAbort(signal);
   log(`$ ${cmd}`);
-  // E2B's commands.run throws CommandExitError on non-zero exit by default —
-  // catch it so throwOnError:false actually works and we can log stdout/stderr.
+  // Run in background so we can SIGKILL the process on abort. E2B's
+  // commands.run in foreground mode ignores AbortSignal entirely — without
+  // this, "stop" only takes effect between commands, leaving long-running
+  // ones (pnpm install, dry-run) pinning the phase for minutes.
+  const handle = await sandbox.commands.run(cmd, { timeoutMs, background: true, envs });
+
+  let aborted = false;
+  const onAbort = () => {
+    aborted = true;
+    handle.kill().catch(() => {});
+  };
+  signal?.addEventListener("abort", onAbort);
+
   let result: { stdout: string; stderr: string; exitCode: number };
   try {
-    result = await sandbox.commands.run(cmd, { timeoutMs });
+    result = await handle.wait();
   } catch (err) {
+    if (aborted) throw new AbortError();
     if (err instanceof CommandExitError) {
       result = { stdout: err.stdout, stderr: err.stderr, exitCode: err.exitCode };
     } else {
       throw err;
     }
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
   }
+
+  if (aborted) throw new AbortError();
+
   if (result.stdout.trim()) log(`  stdout: ${result.stdout.trim()}`);
   if (result.stderr.trim()) log(`  stderr: ${result.stderr.trim()}`);
   if (result.exitCode !== 0) {
