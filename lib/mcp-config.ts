@@ -1,7 +1,10 @@
 import type { Sandbox } from "e2b";
 
 export const MCP_CONFIG_PATH = "/home/user/.mastracode/mcp.json";
-export const MCP_SERVER_KEY = "shmastra-scheduler";
+// Key in mcp.json; must match MCP_SERVER_NAME in lib/mcp/index.ts.
+export const MCP_SERVER_KEY = "shmastra-cloud";
+// Legacy key written by earlier versions; strip on write so it doesn't linger.
+const LEGACY_SERVER_KEYS = ["shmastra-scheduler"];
 
 type McpServerEntry = {
   type: string;
@@ -40,10 +43,13 @@ export async function writeMcpConfig(
     // File (or parent dir) doesn't exist yet — fall through to write.
   }
 
+  const existingServers = { ...(existing.mcpServers ?? {}) };
+  for (const legacy of LEGACY_SERVER_KEYS) delete existingServers[legacy];
+
   const merged: McpConfig = {
     ...existing,
     mcpServers: {
-      ...(existing.mcpServers ?? {}),
+      ...existingServers,
       [MCP_SERVER_KEY]: buildEntry(appUrl, virtualKey),
     },
   };

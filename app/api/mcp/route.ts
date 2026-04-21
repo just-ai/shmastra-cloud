@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveVirtualKey } from "@/lib/virtual-keys";
-import { handleMcpPayload } from "@/lib/mcp-server";
+import { handleMcpPayload } from "@/lib/mcp";
 
 export const runtime = "nodejs";
 

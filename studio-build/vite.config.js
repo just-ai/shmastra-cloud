@@ -2,18 +2,18 @@ import { defineConfig } from "vite";
 import { readFileSync, writeFileSync, cpSync, existsSync } from "fs";
 import { resolve } from "path";
 import { config } from "dotenv";
+import { MASTRA_API_PREFIX } from "../lib/mastra-constants";
 
 // Load local overrides first, then fall back to .env defaults.
 config({ path: resolve(__dirname, "../.env.local") });
 config({ path: resolve(__dirname, "../.env") });
 
-// Build-time defaults for MASTRA_* variables (same as next.config.ts env)
-// MASTRA_API_PREFIX value must stay in sync with lib/mastra-constants.ts
+// Build-time defaults for MASTRA_* variables (same as next.config.ts env).
 const mastraDefaults = {
   MASTRA_SERVER_HOST: "__SANDBOX_HOST__",
   MASTRA_SERVER_PORT: "443",
   MASTRA_SERVER_PROTOCOL: "https",
-  MASTRA_API_PREFIX: "/api/mastra",
+  MASTRA_API_PREFIX,
   MASTRA_STUDIO_BASE_PATH: "/studio",
   MASTRA_AUTO_DETECT_URL: "false",
   MASTRA_TELEMETRY_DISABLED: "true",
