@@ -10,12 +10,6 @@
     "duration-slow",
     "ease-out-custom",
   ];
-  var ACTION_ROW_REQUIRED_CLASSES = [
-    "flex",
-    "items-center",
-    "justify-end",
-    "gap-1",
-  ];
   var EXPANDED_SIDEBAR_WIDTH_CLASSES = [
     "lg:min-w-52",
     "xl:min-w-56",
@@ -26,6 +20,7 @@
   var BUTTON_ID = "shmastra-studio-schedules-button";
   var DIALOG_ID = "shmastra-studio-schedules-dialog";
   var API_BASE = "/api/schedules";
+  var ACTION_GROUP_CLASS = "shmastra-studio-action-group";
 
   var resizeObserver = null;
   var observedSidebar = null;
@@ -42,17 +37,37 @@
     return null;
   }
 
-  function findActionRow(sidebar) {
+  function findBottomRow(sidebar) {
     if (!sidebar) return null;
-    var divs = sidebar.querySelectorAll("div");
-    for (var i = 0; i < divs.length; i += 1) {
-      var el = divs[i];
-      var ok = ACTION_ROW_REQUIRED_CLASSES.every(function (c) {
-        return el.classList.contains(c);
-      });
-      if (ok) return el;
+    var toggles = sidebar.querySelectorAll(
+      'button[aria-label="Toggle sidebar"]',
+    );
+    for (var i = 0; i < toggles.length; i += 1) {
+      var parent = toggles[i].parentElement;
+      if (
+        parent &&
+        parent.classList.contains("flex") &&
+        parent.classList.contains("justify-end") &&
+        parent.classList.contains("pb-3")
+      ) {
+        return parent;
+      }
     }
     return null;
+  }
+
+  function ensureActionGroup(row) {
+    if (!row) return null;
+    var group = row.querySelector("." + ACTION_GROUP_CLASS);
+    if (group) return group;
+    group = document.createElement("span");
+    group.className = ACTION_GROUP_CLASS;
+    group.style.display = "inline-flex";
+    group.style.alignItems = "center";
+    group.style.gap = "0.375rem";
+    group.style.marginRight = "auto";
+    row.insertBefore(group, row.firstChild || null);
+    return group;
   }
 
   function isSidebarCollapsed(sidebar) {
@@ -130,26 +145,27 @@
   function ensureButton() {
     var sidebar = findSidebar();
     var existing = document.getElementById(BUTTON_ID);
-    var row = findActionRow(sidebar);
+    var row = findBottomRow(sidebar);
+    var group = ensureActionGroup(row);
 
-    if (!row) {
+    if (!group) {
       if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
       return;
     }
 
-    if (existing && existing.parentNode !== row) {
+    if (existing && existing.parentNode !== group) {
       existing.parentNode.removeChild(existing);
       existing = null;
     }
 
     if (!existing) {
       existing = createButton();
-      // Insert before logout if present, otherwise at the end.
+      // Schedules sits to the left of the logout button (leftmost in the row).
       var logout = document.getElementById("shmastra-studio-logout-link");
-      if (logout && logout.parentNode === row) {
-        row.insertBefore(existing, logout);
+      if (logout && logout.parentNode === group) {
+        group.insertBefore(existing, logout);
       } else {
-        row.appendChild(existing);
+        group.insertBefore(existing, group.firstChild || null);
       }
     }
 
@@ -196,15 +212,6 @@
     return node;
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
   function formatDate(iso) {
     if (!iso) return "—";
     try {
@@ -244,14 +251,85 @@
     error: null,
   };
 
+  function positionDialog() {
+    if (!state.dialog) return;
+    var anchor = document.getElementById(BUTTON_ID);
+    if (!anchor) return;
+    var rect = anchor.getBoundingClientRect();
+    var gap = 8;
+    var margin = 12;
+    var dlg = state.dialog;
+
+    dlg.style.position = "fixed";
+    dlg.style.margin = "0";
+    // Let width/height settle before measuring.
+    dlg.style.maxWidth = "min(640px, calc(100vw - " + margin * 2 + "px))";
+    dlg.style.maxHeight = "min(560px, calc(100vh - " + margin * 2 + "px))";
+
+    var dh = dlg.offsetHeight || 400;
+    var dw = dlg.offsetWidth || 480;
+
+    // Prefer above the button; fall back to below if no room.
+    var top = rect.top - gap - dh;
+    if (top < margin) top = rect.bottom + gap;
+    if (top + dh > window.innerHeight - margin) {
+      top = Math.max(margin, window.innerHeight - margin - dh);
+    }
+
+    // Align left edge with button; clamp to viewport.
+    var left = rect.left;
+    if (left + dw > window.innerWidth - margin) {
+      left = window.innerWidth - margin - dw;
+    }
+    if (left < margin) left = margin;
+
+    dlg.style.top = top + "px";
+    dlg.style.left = left + "px";
+  }
+
+  function onOutsideClick(e) {
+    if (!state.dialog || !state.dialog.open) return;
+    var anchor = document.getElementById(BUTTON_ID);
+    if (state.dialog.contains(e.target)) return;
+    if (anchor && anchor.contains(e.target)) return;
+    closeDialog();
+  }
+
+  function onWindowChange() {
+    if (state.dialog && state.dialog.open) positionDialog();
+  }
+
+  function onKeyDown(e) {
+    if (e.key === "Escape" && state.dialog && state.dialog.open) {
+      e.preventDefault();
+      closeDialog();
+    }
+  }
+
   function openDialog() {
     if (!state.dialog) buildDialog();
-    state.dialog.showModal();
+    if (state.dialog.open) {
+      closeDialog();
+      return;
+    }
+    state.dialog.show();
+    positionDialog();
     loadSchedules();
+    // Defer so the opening click doesn't immediately close it.
+    setTimeout(function () {
+      document.addEventListener("mousedown", onOutsideClick, true);
+    }, 0);
+    window.addEventListener("resize", onWindowChange);
+    window.addEventListener("scroll", onWindowChange, true);
+    document.addEventListener("keydown", onKeyDown);
   }
 
   function closeDialog() {
     if (state.dialog) state.dialog.close();
+    document.removeEventListener("mousedown", onOutsideClick, true);
+    window.removeEventListener("resize", onWindowChange);
+    window.removeEventListener("scroll", onWindowChange, true);
+    document.removeEventListener("keydown", onKeyDown);
   }
 
   function buildDialog() {
@@ -262,16 +340,22 @@
     dialog.style.borderRadius = "12px";
     dialog.style.background = "#111";
     dialog.style.color = "#eee";
-    dialog.style.width = "min(900px, 90vw)";
-    dialog.style.maxHeight = "85vh";
+    dialog.style.width = "min(640px, calc(100vw - 24px))";
     dialog.style.fontFamily = "inherit";
     dialog.style.fontSize = "0.875rem";
+    dialog.style.boxShadow = "0 16px 48px rgba(0,0,0,0.5)";
+    dialog.style.overflow = "hidden";
 
     var style = document.createElement("style");
     style.textContent =
-      "#" + DIALOG_ID + "::backdrop { background: rgba(0,0,0,0.55); }" +
-      "#" + DIALOG_ID + " .sx-body { padding: 20px 24px; overflow-y: auto; max-height: calc(85vh - 60px); }" +
-      "#" + DIALOG_ID + " .sx-head { display:flex; justify-content:space-between; align-items:center; padding: 14px 20px; border-bottom:1px solid rgba(255,255,255,0.08); }" +
+      // Only apply flex layout when open, so the UA's
+      // `dialog:not([open]) { display: none }` still hides it on close.
+      "#" + DIALOG_ID + "[open] { display: flex; flex-direction: column; }" +
+      "#" + DIALOG_ID + " .sx-body { padding: 16px 20px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }" +
+      "#" + DIALOG_ID + " .sx-head { display:flex; justify-content:space-between; align-items:center; padding: 12px 16px 12px 20px; border-bottom:1px solid rgba(255,255,255,0.08); }" +
+      "#" + DIALOG_ID + " .sx-close { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; background:transparent; color:#aaa; border:1px solid transparent; border-radius:6px; cursor:pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }" +
+      "#" + DIALOG_ID + " .sx-close:hover { background:rgba(255,255,255,0.06); color:#fff; border-color:rgba(255,255,255,0.12); }" +
+      "#" + DIALOG_ID + " .sx-close svg { width:14px; height:14px; display:block; }" +
       "#" + DIALOG_ID + " .sx-tabs { display:flex; gap:8px; margin-bottom:16px; }" +
       "#" + DIALOG_ID + " .sx-tab { padding:6px 12px; border-radius:6px; cursor:pointer; background:transparent; color:#aaa; border:1px solid transparent; }" +
       "#" + DIALOG_ID + " .sx-tab.active { background:rgba(255,255,255,0.06); color:#fff; border-color:rgba(255,255,255,0.1); }" +
@@ -290,17 +374,55 @@
       "#" + DIALOG_ID + " pre { white-space: pre-wrap; background:#1a1a1a; border-radius:6px; padding:8px; margin:6px 0 0; font-size:0.75rem; max-height:200px; overflow:auto; }";
     dialog.appendChild(style);
 
+    var closeIcon = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "svg",
+    );
+    closeIcon.setAttribute("viewBox", "0 0 24 24");
+    closeIcon.setAttribute("fill", "none");
+    closeIcon.setAttribute("stroke", "currentColor");
+    closeIcon.setAttribute("stroke-width", "2");
+    closeIcon.setAttribute("stroke-linecap", "round");
+    closeIcon.setAttribute("stroke-linejoin", "round");
+    closeIcon.setAttribute("aria-hidden", "true");
+    var closePath = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "path",
+    );
+    closePath.setAttribute("d", "M18 6L6 18 M6 6l12 12");
+    closeIcon.appendChild(closePath);
+
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "sx-close";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.title = "Close";
+    closeBtn.appendChild(closeIcon);
+    // Stop pointerdown from bubbling so no outside-click or upstream handler
+    // can swallow it. Close on pointerup (works for mouse/touch/pen and is
+    // robust even if click is intercepted by another listener).
+    closeBtn.addEventListener("pointerdown", function (e) {
+      e.stopPropagation();
+    });
+    closeBtn.addEventListener("pointerup", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        console.log("[shmastra-schedules] close pointerup");
+      } catch (_) {}
+      closeDialog();
+    });
+    // Keyboard activation (Enter/Space) — pointerup doesn't cover it.
+    closeBtn.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        closeDialog();
+      }
+    });
+
     var head = el("div", { class: "sx-head" }, [
       el("strong", null, "Schedules"),
-      el(
-        "button",
-        {
-          class: "sx-btn",
-          onClick: closeDialog,
-          "aria-label": "Close",
-        },
-        "Close",
-      ),
+      closeBtn,
     ]);
     dialog.appendChild(head);
 
@@ -322,12 +444,13 @@
     if (!body) return;
     body.innerHTML = "";
 
-    var tabs = el("div", { class: "sx-tabs" }, [
-      tabBtn("schedules", "Schedules"),
-      tabBtn("create", "New schedule"),
-      state.selectedId ? tabBtn("runs", "Runs") : null,
-    ]);
-    body.appendChild(tabs);
+    if (state.selectedId) {
+      var tabs = el("div", { class: "sx-tabs" }, [
+        tabBtn("schedules", "Schedules"),
+        tabBtn("runs", "Runs"),
+      ]);
+      body.appendChild(tabs);
+    }
 
     if (state.error) {
       body.appendChild(el("div", { class: "sx-error", text: state.error }));
@@ -338,9 +461,8 @@
       return;
     }
 
-    if (state.tab === "schedules") renderList(body);
-    else if (state.tab === "create") renderCreate(body);
-    else if (state.tab === "runs") renderRuns(body);
+    if (state.tab === "runs") renderRuns(body);
+    else renderList(body);
   }
 
   function tabBtn(name, label) {
@@ -361,7 +483,11 @@
   function renderList(body) {
     if (!state.schedules.length) {
       body.appendChild(
-        el("div", { class: "sx-muted" }, "No schedules yet. Create one in the 'New schedule' tab."),
+        el(
+          "div",
+          { class: "sx-muted" },
+          "No schedules yet. Ask the Shmastra assistant to create one.",
+        ),
       );
       return;
     }
@@ -430,49 +556,6 @@
       toggleEnabled(s.id, cb.checked);
     });
     return cb;
-  }
-
-  function renderCreate(body) {
-    var form = el("div", null, [
-      el("label", null, "Name (optional)"),
-      input("create-name", ""),
-      el("label", null, "Path (must start with '/')"),
-      input("create-path", "/api/agents/<id>/generate"),
-      el("label", null, "Cron expression (UTC; e.g. '0 9 * * *' for daily 09:00 UTC)"),
-      input("create-cron", "0 * * * *"),
-      el("label", null, "Timezone (informational)"),
-      input("create-tz", Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
-      el("label", null, "Body (JSON)"),
-      textarea("create-body", '{"messages":[{"role":"user","content":"run me"}]}'),
-      el(
-        "div",
-        { style: { marginTop: "12px", display: "flex", gap: "8px" } },
-        [
-          el("button", { class: "sx-btn primary", onClick: submitCreate }, "Create schedule"),
-          el(
-            "button",
-            {
-              class: "sx-btn",
-              onClick: function () {
-                state.tab = "schedules";
-                render();
-              },
-            },
-            "Cancel",
-          ),
-        ],
-      ),
-    ]);
-    body.appendChild(form);
-  }
-
-  function input(id, placeholder) {
-    return el("input", { id: id, placeholder: placeholder });
-  }
-  function textarea(id, value) {
-    var t = el("textarea", { id: id });
-    t.value = value;
-    return t;
   }
 
   function renderRuns(body) {
@@ -564,42 +647,6 @@
     } catch (err) {
       state.error = err.message;
     } finally {
-      state.loading = false;
-      render();
-    }
-  }
-
-  async function submitCreate() {
-    var name = document.getElementById("create-name").value.trim();
-    var path = document.getElementById("create-path").value.trim();
-    var cron = document.getElementById("create-cron").value.trim();
-    var tz = document.getElementById("create-tz").value.trim() || "UTC";
-    var bodyStr = document.getElementById("create-body").value.trim();
-    var bodyObj = {};
-    if (bodyStr) {
-      try {
-        bodyObj = JSON.parse(bodyStr);
-      } catch (e) {
-        state.error = "Body must be valid JSON: " + e.message;
-        render();
-        return;
-      }
-    }
-    state.loading = true;
-    state.error = null;
-    render();
-    try {
-      await apiRequest("POST", "", {
-        name: name || null,
-        path: path,
-        cron_expression: cron,
-        timezone: tz,
-        body: bodyObj,
-      });
-      state.tab = "schedules";
-      await loadSchedules();
-    } catch (err) {
-      state.error = err.message;
       state.loading = false;
       render();
     }
