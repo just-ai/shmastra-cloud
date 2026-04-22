@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { run } from "../../sandbox.mjs";
-import { MAIN_DIR, ensurePm2Running, type PhaseCtx } from "./shared.mjs";
+import { ensurePm2Running, type PhaseCtx } from "./shared.mjs";
 
 const BOOTSTRAP_FILES: Array<{ local: string; remote: string; executable?: boolean }> = [
   { local: "../../../scripts/sandbox/healer.mts", remote: "/home/user/healer.mts" },
@@ -9,8 +9,7 @@ const BOOTSTRAP_FILES: Array<{ local: string; remote: string; executable?: boole
   { local: "../../../scripts/sandbox/start.sh", remote: "/home/user/start.sh", executable: true },
 ];
 
-// Upload latest sandbox-side bootstrap files, run Mastra DB migrations,
-// then start shmastra + healer via pm2.
+// Upload latest sandbox-side bootstrap files, then start shmastra + healer via pm2.
 export async function restartPhase({ sandbox, log, signal, pendingEnvs }: PhaseCtx): Promise<void> {
   for (const { local, remote, executable } of BOOTSTRAP_FILES) {
     const localPath = fileURLToPath(new URL(local, import.meta.url));
@@ -21,22 +20,6 @@ export async function restartPhase({ sandbox, log, signal, pendingEnvs }: PhaseC
       await run(sandbox, `chmod +x ${remote}`, log, { throwOnError: false, signal });
     }
   }
-
-  // Back up .storage (SQLite dbs — not in git, so they need live migration)
-  // and run `mastra migrate` against the new schema before relaunching pm2.
-  log("Backing up .storage → ~/.backup ...");
-  await run(
-    sandbox,
-    `if [ -d "${MAIN_DIR}/.storage" ]; then rm -rf "$HOME/.backup" && cp -r "${MAIN_DIR}/.storage" "$HOME/.backup"; else echo "no .storage to back up"; fi`,
-    log,
-    { throwOnError: false, signal },
-  );
-
-  log("Running mastra migrate...");
-  await run(sandbox, `cd "${MAIN_DIR}" && npx mastra migrate -y`, log, {
-    timeoutMs: 180_000,
-    signal,
-  });
 
   const additions = pendingEnvs ?? {};
   if (Object.keys(additions).length === 0) {

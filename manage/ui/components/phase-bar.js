@@ -1,6 +1,6 @@
 import { createElement as h } from "react";
 
-export const PHASES = ["fetch", "merge", "install", "build", "apply", "patch", "restart"];
+export const PHASES = ["fetch", "merge", "install", "build", "apply", "migrate", "patch", "restart"];
 
 function phaseColor(p, logPhaseSet, lastLogPhase, status) {
   if (!logPhaseSet.has(p)) return "var(--bg-3)";

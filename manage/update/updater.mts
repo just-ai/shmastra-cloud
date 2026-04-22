@@ -12,6 +12,7 @@ import {
   buildPhase,
   applyPhase,
   patchPhase,
+  migratePhase,
   restartPhase,
   ensurePm2Running,
   cleanup,
@@ -81,6 +82,7 @@ export async function updateSandbox(
     await runPhase(ctx, "install", installPhase);
     await runPhase(ctx, "build", buildPhase);
     await runPhase(ctx, "apply", applyPhase);
+    await runPhase(ctx, "migrate", migratePhase);
     await runPhase(ctx, "patch", patchPhase);
     await runPhase(ctx, "restart", restartPhase);
 

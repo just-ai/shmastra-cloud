@@ -14,7 +14,7 @@ export function updateBranch(): string {
   return raw;
 }
 
-export const UPDATE_PHASES = ["connect", "fetch", "merge", "install", "build", "apply", "patch", "restart"] as const;
+export const UPDATE_PHASES = ["connect", "fetch", "merge", "install", "build", "apply", "migrate", "patch", "restart"] as const;
 export type UpdatePhase = (typeof UPDATE_PHASES)[number];
 
 export interface PhaseCtx {
