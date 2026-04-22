@@ -1,10 +1,11 @@
 import { run, checkAbort } from "../../sandbox.mjs";
 import { resolveConflicts } from "../conflicts.mjs";
-import { MAIN_DIR, WORKTREE_DIR, WORKTREE_BRANCH, type PhaseCtx } from "./shared.mjs";
+import { MAIN_DIR, WORKTREE_DIR, WORKTREE_BRANCH, updateBranch, type PhaseCtx } from "./shared.mjs";
 
-// Add worktree, merge origin/main, resolve conflicts if any.
+// Add worktree, merge origin/<branch>, resolve conflicts if any.
 export async function mergePhase({ sandbox, log, signal }: PhaseCtx): Promise<void> {
-  log("Merging origin/main...");
+  const branch = updateBranch();
+  log(`Merging origin/${branch}...`);
 
   await run(
     sandbox,
@@ -17,7 +18,7 @@ export async function mergePhase({ sandbox, log, signal }: PhaseCtx): Promise<vo
 
   const mergeResult = await run(
     sandbox,
-    `git -C "${WORKTREE_DIR}" merge origin/main --no-edit 2>&1 || true`,
+    `git -C "${WORKTREE_DIR}" merge origin/${branch} --no-edit 2>&1 || true`,
     log,
     { throwOnError: false, signal },
   );
