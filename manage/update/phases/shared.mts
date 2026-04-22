@@ -4,6 +4,16 @@ export const MAIN_DIR = "/home/user/shmastra";
 export const WORKTREE_DIR = "/home/user/merge";
 export const WORKTREE_BRANCH = "merge-main";
 
+// Remote branch to pull updates from. Override via SANDBOX_UPDATE_BRANCH in .env*.
+export function updateBranch(): string {
+  const raw = (process.env.SANDBOX_UPDATE_BRANCH || "main").trim();
+  // Guard against shell injection — branch names should be shell-safe.
+  if (!/^[A-Za-z0-9._\/-]+$/.test(raw)) {
+    throw new Error(`Invalid SANDBOX_UPDATE_BRANCH: ${raw}`);
+  }
+  return raw;
+}
+
 export const UPDATE_PHASES = ["connect", "fetch", "merge", "install", "build", "apply", "patch", "restart"] as const;
 export type UpdatePhase = (typeof UPDATE_PHASES)[number];
 
