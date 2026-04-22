@@ -1,12 +1,13 @@
 import { run, AbortError } from "../../sandbox.mjs";
-import { MAIN_DIR, type PhaseCtx } from "./shared.mjs";
+import { MAIN_DIR, SkipPhase, type PhaseCtx } from "./shared.mjs";
 
 const BACKUP_DIR = "$HOME/.backup";
 
 // Back up the sandbox's local SQLite dbs (.storage is gitignored) and run
 // `mastra migrate` against the new schema. On failure, restore the backup
 // so the phase failure in updater.mts leaves the sandbox in a runnable state.
-export async function migratePhase({ sandbox, log, signal }: PhaseCtx): Promise<void> {
+export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
+  if (state.behind === 0) throw new SkipPhase("already up to date");
   log("Backing up .storage → ~/.backup ...");
   await run(
     sandbox,

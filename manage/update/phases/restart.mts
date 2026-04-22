@@ -10,7 +10,8 @@ const BOOTSTRAP_FILES: Array<{ local: string; remote: string; executable?: boole
 ];
 
 // Upload latest sandbox-side bootstrap files, then start shmastra + healer via pm2.
-export async function restartPhase({ sandbox, log, signal, pendingEnvs }: PhaseCtx): Promise<void> {
+export async function restartPhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
+  const pendingEnvs = state.pendingEnvs;
   for (const { local, remote, executable } of BOOTSTRAP_FILES) {
     const localPath = fileURLToPath(new URL(local, import.meta.url));
     const content = readFileSync(localPath, "utf-8");

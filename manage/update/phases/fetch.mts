@@ -1,9 +1,11 @@
 import { run, checkAbort } from "../../sandbox.mjs";
 import { MAIN_DIR, cleanup, updateBranch, type PhaseCtx } from "./shared.mjs";
 
-// Configure git, clean worktree, pull origin/<branch>, return commits behind origin.
-export async function fetchPhase(ctx: PhaseCtx): Promise<number> {
-  const { sandbox, log, signal } = ctx;
+// Configure git, clean worktree, pull origin/<branch>, stash the resulting
+// commits-behind count on ctx.state so downstream phases can decide whether
+// to run or skip.
+export async function fetchPhase(ctx: PhaseCtx): Promise<void> {
+  const { sandbox, log, signal, state } = ctx;
   const branch = updateBranch();
 
   await run(
@@ -39,5 +41,10 @@ export async function fetchPhase(ctx: PhaseCtx): Promise<number> {
     log,
     { throwOnError: false, signal },
   );
-  return parseInt(behindResult.stdout.trim(), 10);
+  state.behind = parseInt(behindResult.stdout.trim(), 10) || 0;
+  if (state.behind === 0) {
+    log("Already up to date.");
+  } else {
+    log(`${state.behind} new commit(s) on origin/${branch}.`);
+  }
 }

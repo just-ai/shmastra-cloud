@@ -101,7 +101,6 @@ export async function runPatches(
   supabase: SupabaseClient,
   log: LogFn,
   signal?: AbortSignal,
-  onPhase?: () => void,
 ): Promise<PatchesResult> {
   const collectedEnvs: Record<string, string> = {};
   const all = listUpdates();
@@ -114,7 +113,6 @@ export async function runPatches(
     return { applied: 0, envs: collectedEnvs };
   }
 
-  onPhase?.();
   log(`${pending.length} pending update(s): ${pending.map((u) => u.id).join(", ")}`);
 
   const env = await resolveSandboxEnvContext(sandbox, supabase);

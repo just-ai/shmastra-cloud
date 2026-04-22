@@ -14,17 +14,30 @@ export function updateBranch(): string {
   return raw;
 }
 
-export const UPDATE_PHASES = ["connect", "fetch", "merge", "install", "build", "apply", "migrate", "patch", "restart"] as const;
-export type UpdatePhase = (typeof UPDATE_PHASES)[number];
+export type PhaseStatus = "running" | "done" | "skipped" | "error";
+
+// Thrown by a phase when it decides it has nothing to do. The driver treats
+// this as a non-error transition to the next phase and reports it to the UI.
+export class SkipPhase extends Error {
+  constructor(reason?: string) {
+    super(reason ?? "phase skipped");
+    this.name = "SkipPhase";
+  }
+}
+
+// Shared state passed between phases. Each phase writes what later phases
+// depend on (and earlier phases shouldn't need to know about).
+export interface UpdateState {
+  behind?: number;
+  pendingEnvs?: Record<string, string>;
+}
 
 export interface PhaseCtx {
   sandbox: SandboxInstance;
   sandboxId: string;
   log: LogFn;
   signal?: AbortSignal;
-  onPhase?: (phase: UpdatePhase) => void;
-  // Envs collected by patches during the `patch` phase, applied by `restart`.
-  pendingEnvs?: Record<string, string>;
+  state: UpdateState;
 }
 
 export type PhaseFn = (ctx: PhaseCtx) => Promise<void>;
