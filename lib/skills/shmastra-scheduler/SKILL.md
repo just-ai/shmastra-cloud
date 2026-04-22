@@ -1,6 +1,6 @@
 ---
 name: shmastra-scheduler
-description: "Schedule Mastra workflows to run on cron via the `shmastra-cloud` MCP tools. Use whenever the user wants something to run periodically — every morning, every hour, once a week. Covers the rule that only workflows are scheduled (never agents or raw endpoints), how to wrap an agent or an HTTP call in a minimal workflow using `createAgentStep`, and how to use the scheduler tools (`create_workflow_schedule`, `list_schedules`, `list_runs`, `update_schedule`, `delete_schedule`, `get_schedule`)."
+description: "Schedule workflows, agents and custom URLs to run on cron via the `shmastra_cloud` tools. Use whenever the user wants something to run periodically — every morning, every hour, once a week."
 ---
 
 # Scheduling workflows on cron
@@ -20,7 +20,7 @@ Rationale: workflows give a run id, a pollable status, typed input/output, retry
 
 2. **Make sure the workflow exists.** If not, create one (see "Wrapping patterns" below). The workflow's id becomes the schedule's `workflow_id`.
 
-3. **Call `create_workflow_schedule`** with `workflow_id`, `cron_expression`, and any `input_data`.
+3. **Call `shmastra_cloud_create_workflow_schedule`** with `workflow_id`, `cron_expression`, and any `input_data`.
 
 4. **Confirm success to the user.** Reply in the user's own language. Describe the cron expression in natural language ("every day at 09:00 Moscow time"), mention the schedule's `name`, and tell them they can pause it with "pause the X schedule" or see history with "show runs of X". Don't surface the schedule id or internal identifiers.
 
@@ -82,9 +82,9 @@ export const pingWorkflow = createWorkflow({
 
 For anything more complex (multi-step, conditional, parallel), read the **mastra** skill first — don't guess workflow APIs.
 
-## MCP tool reference (`shmastra-cloud` server)
+## Tools reference
 
-### `create_workflow_schedule`
+### `shmastra_cloud_create_workflow_schedule`
 
 ```json
 {
@@ -103,23 +103,23 @@ For anything more complex (multi-step, conditional, parallel), read the **mastra
 - `name` — display label. Always set one so the user can refer to the schedule later by name.
 - `enabled` — defaults `true`. Pass `false` to create paused.
 
-### `list_schedules`
+### `shmastra_cloud_list_schedules`
 
 No arguments. Returns all schedules for this user, newest first. Each row has `id`, `name`, `workflow_id`, `cron_expression`, `timezone`, `enabled`, `last_run_at`.
 
-### `get_schedule({ id })`
+### `shmastra_cloud_get_schedule({ id })`
 
 Fetch a single schedule.
 
-### `update_schedule({ id, ...patch })`
+### `shmastra_cloud_update_schedule({ id, ...patch })`
 
 Patch any of `cron_expression`, `timezone`, `name`, `enabled`, `body`. To pause: `{ id, enabled: false }`. To resume: `{ id, enabled: true }`.
 
-### `delete_schedule({ id })`
+### `shmastra_cloud_delete_schedule({ id })`
 
 Removes the schedule and stops its cron job.
 
-### `list_runs({ schedule_id, limit? })`
+### `shmastra_cloud_list_runs({ schedule_id, limit? })`
 
 Recent executions, newest first. Each run has:
 
@@ -136,20 +136,20 @@ Recent executions, newest first. Each run has:
 1. Pick the agent (list them if ambiguous).
 2. If a wrapping workflow doesn't exist, create one with `createAgentStep` as shown above and register it.
 3. Convert `09:00` in the user's timezone (available to you in context) to a UTC cron expression.
-4. Call `create_workflow_schedule` with a descriptive `name`.
+4. Call `shmastra_cloud_create_workflow_schedule` with a descriptive `name`.
 5. Confirm in the user's language.
 
 ### "Show me what's scheduled"
 
-Call `list_schedules`. Render as a table with `name`, cron in natural language, next run in the user's timezone, enabled/paused.
+Call `shmastra_cloud_list_schedules`. Render as a table with `name`, cron in natural language, next run in the user's timezone, enabled/paused.
 
 ### "Pause that daily job"
 
-Find it via `list_schedules` by name, call `update_schedule({ id, enabled: false })`.
+Find it via `shmastra_cloud_list_schedules` by name, call `update_schedule({ id, enabled: false })`.
 
 ### "Why didn't my schedule run last night?"
 
-Call `list_runs({ schedule_id })`. Look at the most recent rows:
+Call `shmastra_cloud_list_runs({ schedule_id })`. Look at the most recent rows:
 
 - No row where one was expected → the sandbox was paused at that moment, or `cron_expression` was wrong.
 - `workflow_status: "pending"` older than a few minutes → status hasn't settled yet, or the workflow is genuinely long-running.
@@ -161,4 +161,4 @@ Call `list_runs({ schedule_id })`. Look at the most recent rows:
 - **Auth.** The cloud injects the Authorization header at fire time; never put keys in `body` or `input_data`.
 - **URL composition.** You only pass `workflow_id` — the cloud handles the rest.
 - **Timezone conversion for pg_cron.** Cron runs in UTC; you convert once when creating the schedule, using the user's timezone from your context.
-- **Polling.** Fire-and-forget is built-in. You don't have to poll `list_runs` yourself — the cloud keeps `workflow_status` fresh until the run reaches a terminal state.
+- **Polling.** Fire-and-forget is built-in. You don't have to poll `shmastra_cloud_list_runs` yourself — the cloud keeps `workflow_status` fresh until the run reaches a terminal state.

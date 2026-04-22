@@ -1,7 +1,7 @@
 import { createMcpServer } from "./server";
 import { schedulerToolset } from "./tools/scheduler";
 
-export const MCP_SERVER_NAME = "shmastra-cloud";
+export const MCP_SERVER_NAME = "shmastra_cloud";
 
 const server = createMcpServer({
   name: MCP_SERVER_NAME,

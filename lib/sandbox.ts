@@ -9,7 +9,7 @@ import {
 } from "./db";
 import { getVirtualKey } from "./virtual-keys";
 import { writeMcpConfig } from "./mcp-config";
-import { writeSchedulerSkill } from "./skill-injection";
+import { writeSkills } from "./skill-injection";
 import { MASTRA_API_PREFIX } from "./mastra-constants";
 import { getAppUrl } from "./app-url";
 
@@ -164,9 +164,9 @@ async function provisionSandbox(userId: string) {
     }
 
     try {
-      await writeSchedulerSkill(sandbox);
+      await writeSkills(sandbox);
     } catch (err) {
-      console.error(`Failed to write scheduler skill for sandbox ${sandbox.sandboxId}:`, err);
+      console.error(`Failed to write skills for sandbox ${sandbox.sandboxId}:`, err);
     }
 
     await updateSandbox(userId, {
