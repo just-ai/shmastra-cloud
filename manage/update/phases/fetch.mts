@@ -1,9 +1,10 @@
 import { run, checkAbort } from "../../sandbox.mjs";
-import { MAIN_DIR, cleanup, type PhaseCtx } from "./shared.mjs";
+import { MAIN_DIR, cleanup, updateBranch, type PhaseCtx } from "./shared.mjs";
 
-// Configure git, clean worktree, pull origin/main, return commits behind origin.
+// Configure git, clean worktree, pull origin/<branch>, return commits behind origin.
 export async function fetchPhase(ctx: PhaseCtx): Promise<number> {
   const { sandbox, log, signal } = ctx;
+  const branch = updateBranch();
 
   await run(
     sandbox,
@@ -30,11 +31,11 @@ export async function fetchPhase(ctx: PhaseCtx): Promise<number> {
 
   checkAbort(signal);
 
-  await run(sandbox, `git -C "${MAIN_DIR}" fetch origin`, log, { throwOnError: false, signal });
+  await run(sandbox, `git -C "${MAIN_DIR}" fetch origin ${branch}`, log, { throwOnError: false, signal });
 
   const behindResult = await run(
     sandbox,
-    `git -C "${MAIN_DIR}" rev-list HEAD..origin/main --count`,
+    `git -C "${MAIN_DIR}" rev-list HEAD..origin/${branch} --count`,
     log,
     { throwOnError: false, signal },
   );
