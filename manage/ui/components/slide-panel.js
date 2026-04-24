@@ -8,6 +8,7 @@ import { ChatTab } from "./chat-tab.js";
 import { FilesTab } from "./files-tab.js";
 import { StatsTab } from "./stats-tab.js";
 import { TraceTab } from "./trace-tab.js";
+import { TasksTab } from "./tasks-tab.js";
 
 export function SlidePanel({
   selected, selectedEntry, panelWidth, setPanelWidth,
@@ -156,6 +157,9 @@ export function SlidePanel({
 
     // Trace tab (observability)
     currentTab === "trace" && h(TraceTab, { sandboxId: selected }),
+
+    // Tasks tab (schedules + runs)
+    currentTab === "tasks" && h(TasksTab, { sandboxId: selected }),
 
     // Chat tab
     currentTab === "chat" && h(ChatTab, {
