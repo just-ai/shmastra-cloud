@@ -52,9 +52,11 @@ Note `0 6` UTC = `09:00` Moscow (UTC+3).
 
 ## input_data
 
-**`input_data` is an object, never a bare string/number/array.** It's passed verbatim to the workflow as `inputData` and is Zod-validated against the workflow's `inputSchema`. Mismatched shape → the run fails at `create-run` with a validation error.
+**`input_data` is an object, never a bare string/number/array.** It's passed verbatim to the workflow as `inputData`.
 
-Before scheduling, read the workflow's `inputSchema` to know the shape. If the user already supplied concrete values ("summarize tickets since yesterday"), map them into the schema keys. If the schema is empty, pass `{}`.
+**The server validates `input_data` against the workflow's `inputSchema` before creating or updating the schedule.** If it doesn't match, the tool call fails with an error that lists every violation and prints the expected schema. Read the error, fix `input_data`, and call the tool again — this is a retryable, user-visible signal, not a system failure. Don't invent or hallucinate the fix: the error body contains the exact schema you need to satisfy.
+
+Before scheduling, read the workflow's `inputSchema` in the source to map the user's intent into the right keys. If the user already supplied concrete values ("summarize tickets since yesterday"), put them under the schema's property names. If the schema is empty / all-optional, pass `{}`.
 
 Examples of `input_data` for different workflows:
 
@@ -64,7 +66,7 @@ Examples of `input_data` for different workflows:
 
 If the user wants *one* workflow to run on many targets (e.g. pinging several URLs on different crons), create *multiple* schedules with different `input_data` — don't invent a list field in the workflow.
 
-Updating `input_data` later: call `shmastra_cloud_update_schedule` with the new object; it replaces `inputData` entirely (no merge).
+Updating `input_data` later: call `shmastra_cloud_update_schedule` with the new object; it replaces `inputData` entirely (no merge) and is re-validated against the workflow's current schema.
 
 ## Wrapping patterns
 

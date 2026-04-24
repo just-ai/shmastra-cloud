@@ -2,6 +2,19 @@ import { db } from "./db";
 import { getAppUrl } from "./app-url";
 import { ERROR_DISPLAY_MAX } from "./schedule-trim";
 import { runScheduleFire } from "./schedule-fire";
+import {
+  ScheduleNotFoundError,
+  ScheduleValidationError,
+} from "./schedule-errors";
+import {
+  fetchWorkflowInputSchema,
+  validateInputData,
+} from "./workflow-schema";
+
+// Re-export so existing consumers (route handlers, mcp-server) keep importing
+// error classes from here — the canonical definition lives in ./schedule-errors
+// to break the schedules ↔ workflow-schema cycle.
+export { ScheduleNotFoundError, ScheduleValidationError } from "./schedule-errors";
 
 export type Schedule = {
   id: string;
@@ -201,20 +214,6 @@ function validateWorkflowId(workflowId: unknown): string {
   return workflowId;
 }
 
-export class ScheduleValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ScheduleValidationError";
-  }
-}
-
-export class ScheduleNotFoundError extends Error {
-  constructor(id: string) {
-    super(`Schedule ${id} not found`);
-    this.name = "ScheduleNotFoundError";
-  }
-}
-
 function cronJobName(id: string): string {
   return `schedule_${id}`;
 }
@@ -248,11 +247,19 @@ export async function createWorkflowSchedule(
   const workflow_id = validateWorkflowId(input.workflow_id);
   const cron_expression = validateCron(input.cron_expression);
   const timezone = validateTimezone(input.timezone);
+
+  // Validate input_data against the workflow's live inputSchema before we
+  // write anything. Catches both "{}" vs required fields and unknown workflow
+  // ids; ScheduleValidationError carries an agent-readable retry message.
+  const inputData = input.input_data ?? {};
+  const schema = await fetchWorkflowInputSchema(userId, workflow_id);
+  validateInputData(inputData, schema, workflow_id);
+
   // Mastra's /start always requires an `inputData` field (Zod-validated),
   // even when the workflow takes no input — default to {} so callers that omit
   // `input_data` don't hit "expected object, received undefined".
   const body: Record<string, unknown> = {
-    inputData: input.input_data ?? {},
+    inputData,
   };
   if (typeof input.resource_id === "string" && input.resource_id.length > 0) {
     body.resourceId = input.resource_id;
@@ -296,6 +303,13 @@ export async function updateSchedule(
   if (patch.label !== undefined) updates.label = validateLabel(patch.label);
   if (patch.enabled !== undefined) updates.enabled = Boolean(patch.enabled);
   if (patch.input_data !== undefined || patch.resource_id !== undefined) {
+    // Only validate when the agent actually supplies new input_data — an
+    // update that only tweaks resource_id/cron shouldn't wake the sandbox.
+    if (patch.input_data !== undefined) {
+      const schema = await fetchWorkflowInputSchema(userId, existing.workflow_id);
+      validateInputData(patch.input_data, schema, existing.workflow_id);
+    }
+
     const current = (existing.body as Record<string, unknown> | null) ?? {};
     const nextBody: Record<string, unknown> = { ...current };
     if (patch.input_data !== undefined) {
