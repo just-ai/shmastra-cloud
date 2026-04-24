@@ -1,12 +1,15 @@
 -- Schedules: user-owned cron jobs that fire Mastra workflows.
 --
--- POST goes to /workflows/:id/start-async with our own pregenerated runId
--- in the query. /start-async creates the run AND awaits execution on
--- Mastra's side, returning the full result in the body. scheduler_fire
--- polls net._http_response for up to 10s to catch that body right away;
--- long workflows keep running on the sandbox after we stop listening, and
--- scheduler_poll_active_runs settles their status later via GET
--- /workflows/:id/runs/:runId.
+-- Firing is delegated to our Next.js app. pg_cron calls scheduler_trigger,
+-- which reads public_url off the schedule row and POSTs to
+-- <public_url>/api/schedules/internal/fire?sid=... (fire-and-forget). The
+-- Next.js handler wakes the sandbox, creates a run, kicks it off via /start,
+-- and inserts the schedule_runs row with status='pending'. The SQL poller
+-- (scheduler_poll_active_runs, async via pg_net) takes over from there.
+--
+-- The sid is effectively the capability: it's a UUIDv4 (122 bits of
+-- entropy) stored only in our DB and the user's UI/agent session. No
+-- additional bearer token is needed.
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
@@ -18,17 +21,21 @@ create table if not exists schedules (
   user_id           uuid not null references users(id) on delete cascade,
   label             text not null,
   workflow_id       text not null,
-  path              text not null,
   body              jsonb not null default '{}'::jsonb,
   cron_expression   text not null,
   timezone          text not null default 'UTC',
   cron_job_name     text not null unique,
   enabled           boolean not null default true,
+  -- Snapshot of getAppUrl() at schedule creation time. scheduler_trigger
+  -- uses this to POST to the fire endpoint. If the app moves domains,
+  -- operator runs `update schedules set public_url = '<new>'`.
+  public_url        text,
   last_run_at       timestamptz,
   created_at        timestamptz not null default now(),
-  updated_at        timestamptz not null default now(),
-  constraint schedules_path_starts_with_slash check (path like '/%')
+  updated_at        timestamptz not null default now()
 );
+
+alter table schedules add column if not exists public_url text;
 
 create index if not exists schedules_user_enabled_idx
   on schedules (user_id, enabled);
@@ -36,31 +43,32 @@ create index if not exists schedules_user_enabled_idx
 create table if not exists schedule_runs (
   id                  uuid primary key default gen_random_uuid(),
   schedule_id         uuid not null references schedules(id) on delete cascade,
-  pg_net_request_id   bigint,
   sent_at             timestamptz not null default now(),
   completed_at        timestamptz,
   duration_ms         integer,
   status_code         integer,
-  response_snippet    text,
   error_message       text,
-  -- `poll_url` is baked in at fire time so SQL doesn't have to compose
-  -- api-prefix paths later.
+  -- Raw HTTP response body (trimmed) from the dispatch POST. Useful when
+  -- debugging 4xx/5xx from the sandbox — Mastra's error bodies often tell
+  -- you exactly what went wrong.
+  response_snippet    text,
   workflow_run_id     uuid,
   workflow_status     text,
   workflow_result     jsonb,
   workflow_error      text,
-  -- OpenTelemetry trace id for the workflow run. Fetched via a second
-  -- GET to /observability/traces?metadata={runId} once the run hits a
-  -- terminal state, because /runs/:runId doesn't expose it. Capped at
-  -- MAX_TRACE_ATTEMPTS (see scheduler_poll_active_runs) so runs without a
-  -- trace don't poll forever.
+  -- OpenTelemetry trace id. Fetched via a second GET to
+  -- /observability/traces?metadata={runId} once the run hits a terminal
+  -- state. Capped at 2 attempts.
   trace_id            text,
   trace_request_id    bigint,
   trace_attempts      int not null default 0,
-  last_polled_at      timestamptz,
+  -- `poll_url` is baked in by the fire handler.
   poll_url            text,
-  poll_request_id     bigint
+  poll_request_id     bigint,
+  last_polled_at      timestamptz
 );
+
+alter table schedule_runs add column if not exists response_snippet text;
 
 create index if not exists schedule_runs_schedule_sent_idx
   on schedule_runs (schedule_id, sent_at desc);
@@ -72,91 +80,26 @@ create index if not exists schedule_runs_poll_idx
 
 -- ── Functions ─────────────────────────────────────────────────────────────
 
--- Fire a single schedule: POST /workflows/:id/start-async with our
--- pregenerated runId, then return immediately with a `pending` row.
---
--- Mastra's /start-async awaits the workflow to completion before replying,
--- which for real workloads is almost always longer than any reasonable
--- budget we could hold here — so we don't wait for the body at all.
--- pg_net's short timeout just bounds how long its worker holds the TCP
--- connection; Mastra continues executing regardless of client disconnect.
--- scheduler_poll_active_runs resolves workflow_status later via GET
--- /workflows/:id/runs/:runId.
-create or replace function scheduler_fire(sid uuid)
+-- Fire one schedule: POST to the fire handler at the public_url stored on
+-- the schedule row, fire-and-forget. The handler owns sandbox wake-up, run
+-- creation, and DB writes.
+create or replace function scheduler_trigger(sid uuid)
 returns void
 language plpgsql
 security definer
 as $$
 declare
-  v_path text;
-  v_body jsonb;
-  v_host text;
-  v_vk text;
-  v_url text;
-  v_req_id bigint;
-  v_headers jsonb;
-  v_run_id uuid;
-  v_base text;
-  v_poll_url text;
+  v_public_url text;
 begin
-  select s.path, s.body, sb.sandbox_host, u.virtual_key
-    into v_path, v_body, v_host, v_vk
-  from schedules s
-    join users u on u.id = s.user_id
-    left join sandboxes sb on sb.user_id = u.id and sb.status = 'ready'
-  where s.id = sid and s.enabled = true;
-
-  if not found then
+  select public_url into v_public_url from schedules where id = sid;
+  if v_public_url is null or v_public_url = '' then
+    raise warning 'scheduler: public_url not set for schedule %', sid;
     return;
   end if;
-
-  v_run_id := gen_random_uuid();
-
-  if v_host is null or v_host = '' then
-    insert into schedule_runs (
-      schedule_id, sent_at, completed_at,
-      workflow_run_id, workflow_status, workflow_error, error_message
-    )
-    values (
-      sid, now(), now(),
-      v_run_id, 'failed', 'No active sandbox for user', 'No active sandbox for user'
-    );
-    update schedules set last_run_at = now() where id = sid;
-    return;
-  end if;
-
-  if v_host like 'http%' then
-    v_base := v_host;
-  else
-    v_base := 'https://' || v_host;
-  end if;
-
-  v_headers := jsonb_build_object(
-    'Authorization', 'Bearer ' || coalesce(v_vk, ''),
-    'Content-Type', 'application/json'
+  perform net.http_post(
+    url := v_public_url || '/api/schedules/internal/fire?sid=' || sid::text,
+    timeout_milliseconds := 3000
   );
-
-  v_url := v_base || v_path || '?runId=' || v_run_id;
-  v_poll_url := v_base || regexp_replace(v_path, '/start-async$', '')
-                || '/runs/' || v_run_id;
-
-  -- Fire-and-forget. 5s is enough to establish TCP, send the POST, and
-  -- confirm delivery; beyond that we don't care about the response — the
-  -- poller will settle the run.
-  select net.http_post(
-    url := v_url,
-    body := coalesce(v_body, '{}'::jsonb),
-    headers := v_headers,
-    timeout_milliseconds := 5000
-  ) into v_req_id;
-
-  insert into schedule_runs (
-    schedule_id, pg_net_request_id, sent_at,
-    workflow_run_id, poll_url, workflow_status
-  )
-  values (sid, v_req_id, now(), v_run_id, v_poll_url, 'pending');
-
-  update schedules set last_run_at = now() where id = sid;
 end;
 $$;
 
@@ -169,8 +112,8 @@ security definer
 as $$
 declare
   v_job_name text;
-  v_cron text;
-  v_enabled boolean;
+  v_cron     text;
+  v_enabled  boolean;
 begin
   select cron_job_name, cron_expression, enabled
     into v_job_name, v_cron, v_enabled
@@ -194,7 +137,7 @@ begin
   perform cron.schedule(
     v_job_name,
     v_cron,
-    format('select scheduler_fire(%L::uuid)', sid)
+    format('select scheduler_trigger(%L::uuid)', sid)
   );
 end;
 $$;
@@ -220,14 +163,11 @@ begin
 end;
 $$;
 
--- Poll Mastra for workflow-run status. Two-pass per tick:
---   (1) Merge any pg_net responses that arrived since last tick. For each
---       merged row, poll_request_id is always cleared (even on non-200 or
---       non-terminal) so the next tick can re-dispatch.
---   (2) Dispatch a fresh GET for every non-terminal run that isn't
---       currently in flight (poll_request_id is null). That's the
---       throttle: at most one GET in flight per run, no time-based
---       cooldown. Response cadence is therefore ~= tick interval.
+-- Poll Mastra for workflow-run status. Three phases per tick:
+--   (1) Merge landed /runs/:id poll responses, clear poll_request_id.
+--   (2) Merge landed /observability/traces responses.
+--   (3) Dispatch fresh GETs for non-terminal runs not in flight.
+--   (4) Dispatch trace-id lookups for terminal runs without trace_id (<=2).
 create or replace function scheduler_poll_active_runs()
 returns void
 language plpgsql
@@ -235,9 +175,7 @@ security definer
 as $$
 declare
   -- NB: don't name this `r` — plpgsql would then resolve `r.*` inside the
-  -- merge subquery's `from net._http_response r` to this DECLAREd variable
-  -- (unassigned when the dispatch loop has no rows), producing an opaque
-  -- "record \"r\" is not assigned yet" error.
+  -- merge subquery's `from net._http_response r` to this DECLAREd variable.
   dispatch_row record;
   v_vk text;
   v_headers jsonb;
@@ -257,10 +195,6 @@ begin
     select
       h.id as req_id,
       h.created,
-      -- Guard the jsonb cast: only attempt when we're sure the content
-      -- looks like a JSON object. Anything else (HTML 502 from a proxy,
-      -- empty bodies, plain text) stays null and leaves the row
-      -- untouched but still clears poll_request_id so we can retry.
       case when h.status_code = 200
              and h.content is not null
              and h.content::text ~ '^\s*\{'
@@ -286,11 +220,7 @@ begin
   ) resp
   where sr.poll_request_id = resp.req_id;
 
-  -- (2) Merge landed /observability/traces responses. Mastra returns
-  -- {spans:[{traceId, ...}]}; we take the first span's traceId. Always
-  -- clear trace_request_id so the next tick can retry if the trace
-  -- hasn't been persisted yet (race between workflow terminal and span
-  -- flush).
+  -- (2) Merge landed /observability/traces responses.
   update schedule_runs sr
   set
     trace_id         = coalesce(resp.trace_id, sr.trace_id),
@@ -336,14 +266,7 @@ begin
       where id = dispatch_row.run_row_id;
   end loop;
 
-  -- (4) Dispatch trace-id lookups for terminal runs that don't yet have
-  -- one. /api/mastra/observability/traces returns the root span for a
-  -- given runId with traceId at top level. UUID characters are URL-safe,
-  -- so no escaping is needed for the interpolated runId.
-  --
-  -- Capped at 2 attempts: if spans haven't been persisted by the time we
-  -- ask twice (~20s after terminal), it's probably never coming, and
-  -- endless polling on an unreachable trace wastes pg_net workers.
+  -- (4) Dispatch trace-id lookups for terminal runs that don't yet have one.
   for dispatch_row in
     select sr.id as run_row_id, sr.poll_url, sr.workflow_run_id, s.user_id
     from schedule_runs sr
@@ -359,8 +282,6 @@ begin
     v_headers := jsonb_build_object(
       'Authorization', 'Bearer ' || coalesce(v_vk, '')
     );
-    -- Derive the observability endpoint from poll_url by swapping the
-    -- workflow-specific suffix for the shared /observability/traces path.
     v_trace_url := regexp_replace(
       dispatch_row.poll_url,
       '/workflows/[^/]+/runs/[^/]+$',
@@ -384,41 +305,18 @@ end;
 $$;
 
 -- ── Cron jobs ─────────────────────────────────────────────────────────────
--- Idempotent: pg_cron.schedule upserts by name, and we unschedule first so
--- reruns of this migration pick up updated SQL bodies.
---
--- Also unschedule legacy names (from earlier revisions) in case they're
--- still registered on existing databases.
 
-do $$
-begin
-  perform cron.unschedule('shmastra_scheduler_collect_results');
-exception when others then null;
-end $$;
+do $$ begin perform cron.unschedule('shmastra_scheduler_collect_results');  exception when others then null; end $$;
+do $$ begin perform cron.unschedule('shmastra_scheduler_collect_and_start'); exception when others then null; end $$;
+do $$ begin perform cron.unschedule('shmastra_scheduler_poll_runs');         exception when others then null; end $$;
 
-do $$
-begin
-  perform cron.unschedule('shmastra_scheduler_collect_and_start');
-exception when others then null;
-end $$;
-
-do $$
-begin
-  perform cron.unschedule('shmastra_scheduler_poll_runs');
-exception when others then null;
-end $$;
--- '10 seconds' is the pg_cron 1.5+ sub-minute syntax.
 select cron.schedule(
   'shmastra_scheduler_poll_runs',
   '10 seconds',
   $$select scheduler_poll_active_runs()$$
 );
 
-do $$
-begin
-  perform cron.unschedule('shmastra_scheduler_prune_runs');
-exception when others then null;
-end $$;
+do $$ begin perform cron.unschedule('shmastra_scheduler_prune_runs'); exception when others then null; end $$;
 select cron.schedule(
   'shmastra_scheduler_prune_runs',
   '0 3 * * *',

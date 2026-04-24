@@ -54,7 +54,11 @@ const tools: Tool[] = [
           type: "string",
           description: "Workflow id registered in mastra. Pattern: /^[A-Za-z0-9_.-]+$/.",
         },
-        input_data: { description: "Value passed as `inputData`. Any JSON." },
+        input_data: {
+          type: "object",
+          description: "Object passed as `inputData`; must match the workflow's input schema. Defaults to {}.",
+          additionalProperties: true,
+        },
         resource_id: { type: "string", description: "Optional resourceId override." },
         cron_expression: { type: "string", description: "5- or 6-field cron, UTC." },
         timezone: {
@@ -67,7 +71,7 @@ const tools: Tool[] = [
         },
         enabled: { type: "boolean", description: "Defaults true." },
       },
-      required: ["workflow_id", "cron_expression", "timezone", "label"],
+      required: ["workflow_id", "cron_expression", "timezone", "label", "input_data"],
       additionalProperties: false,
     },
     handler: async (userId, args) =>
@@ -85,7 +89,15 @@ const tools: Tool[] = [
       type: "object",
       properties: {
         id: { type: "string", description: "Schedule id (from list_schedules)." },
-        body: { type: "object" },
+        input_data: {
+          type: "object",
+          description: "Replace `inputData` object; must match the workflow's input schema.",
+          additionalProperties: true,
+        },
+        resource_id: {
+          type: "string",
+          description: "Set `resourceId`; pass empty string to clear.",
+        },
         cron_expression: { type: "string" },
         timezone: { type: "string" },
         label: { type: "string" },

@@ -36,7 +36,7 @@ Browser → Next.js middleware (WorkOS auth + org check)
 1. User signs in → `users` table in Supabase
 2. `/workspace` calls `provisionSandbox()` → creates E2B instance from `shmastra` template
 3. Injects virtual keys + env vars, starts `pnpm dev` via pm2
-4. Polls `/api/auth/me` until Mastra server responds → `status: 'ready'`
+4. Polls `/health` until Mastra server responds → `status: 'ready'`
 5. After 10min idle → sandbox pauses; auto-resumes on next `/api/mastra/*` request
 
 ### Virtual key system
@@ -87,6 +87,15 @@ Migrations in `supabase/migrations/`.
 - `scripts/sandbox/` — files deployed to sandbox (ecosystem.config.cjs, start.sh)
 - `scripts/build-e2b-template.ts` — E2B template builder
 
+### Scheduler
+
+Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/scheduler.ts`). Schedules live in Supabase and are executed by pg_cron. Migration: `supabase/migrations/006_schedules.sql`.
+
+- **Fire path**: pg_cron → `scheduler_trigger(sid)` → `net.http_post` (fire-and-forget) → `/api/schedules/internal/fire?sid=...` (Next.js). The handler wakes the sandbox (`connectToSandbox` → blocks on `/health`), then does two Mastra calls via `@mastra/client-js`: `workflow.createRun()` (gets a Mastra-allocated runId) → `run.start({ inputData })` (kicks execution, returns fast). Result is recorded in `schedule_runs` (status `pending` on success, `failed` on create-run/start error).
+- **URL discovery**: `schedules.public_url` is a snapshot of `getAppUrl()` at creation time; `scheduler_trigger` reads it at fire time. No GUCs, no shared token — `sid` (UUIDv4) is the capability.
+- **Poll path**: pg_cron runs `scheduler_poll_active_runs()` every 10s. Three phases via async pg_net: (1) merge `/runs/:id` responses into `schedule_runs`, (2) merge `/observability/traces` responses into `trace_id`, (3) dispatch new GETs for non-terminal runs (one in-flight per run), (4) dispatch trace lookups for terminal runs without `trace_id` (capped at 2 attempts).
+- **Manual fire**: `/api/schedules/[id]/fire` (WorkOS-auth) calls the same internal endpoint via `fireSchedule()`.
+
 ### Sandbox manager (`manage/`)
 
 **Update mode**: Updates sandboxes to latest `origin/main` using git worktrees (dev server keeps running during merge). Auto-resolves conflicts: lockfiles → delete & regenerate, config files → Claude API, source files → Mastra agent. Web UI mode (`--serve`) runs updates in parallel with concurrency limit of 5, SSE for real-time logs.
@@ -109,4 +118,4 @@ Required in `.env.local`:
 - E2B routes require Node runtime — never mark them as Edge
 - Studio is a Vite-built static bundle; `build:studio` must run before `next build`
 - The `shmastra` E2B template must be built once via `template:build` before sandboxes can be created
-- Sandbox health check endpoint: `GET /api/auth/me` on port 4111
+- Sandbox health check endpoint: `GET /health` on port 4111

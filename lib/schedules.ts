@@ -1,17 +1,17 @@
 import { db } from "./db";
-import { MASTRA_API_PREFIX } from "./mastra-constants";
+import { getAppUrl } from "./app-url";
 
 export type Schedule = {
   id: string;
   user_id: string;
   label: string;
   workflow_id: string;
-  path: string;
   body: unknown;
   cron_expression: string;
   timezone: string;
   cron_job_name: string;
   enabled: boolean;
+  public_url: string | null;
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
@@ -20,13 +20,12 @@ export type Schedule = {
 export type ScheduleRun = {
   id: string;
   schedule_id: string;
-  pg_net_request_id: number | null;
   sent_at: string;
   completed_at: string | null;
   duration_ms: number | null;
   status_code: number | null;
-  response_snippet: string | null;
   error_message: string | null;
+  response_snippet: string | null;
   workflow_run_id: string | null;
   workflow_status: string | null;
   workflow_result: unknown;
@@ -88,9 +87,8 @@ export function toScheduleSummary(s: Schedule): ScheduleSummary {
 }
 
 // Full payload for an explicit "give me everything about this run" MCP tool.
-// Drops only pg_net/poller plumbing; keeps workflow_result and
-// response_snippet so agents that really need them can fetch them on
-// demand.
+// Drops only poller plumbing; keeps workflow_result and response_snippet
+// so agents that really need them can fetch them on demand.
 export type ScheduleRunDetail = ScheduleRunSummary & {
   schedule_id: string;
   workflow_result: unknown;
@@ -132,7 +130,9 @@ export type CreateWorkflowScheduleInput = {
 };
 
 export type UpdateSchedulePatch = {
-  body?: unknown;
+  input_data?: unknown;
+  // Empty string clears the existing resourceId; omit to leave as-is.
+  resource_id?: string;
   cron_expression?: string;
   timezone?: string;
   label?: string;
@@ -184,14 +184,6 @@ function validateTimezone(tz: unknown): string {
     throw new ScheduleValidationError(`timezone ${JSON.stringify(value)} is not a valid IANA zone`);
   }
   return value;
-}
-
-function validateBody(body: unknown): unknown {
-  if (body === undefined || body === null) return {};
-  if (typeof body !== "object") {
-    throw new ScheduleValidationError("body must be a JSON object");
-  }
-  return body;
 }
 
 const WORKFLOW_ID_RE = /^[A-Za-z0-9_.-]+$/;
@@ -255,7 +247,7 @@ export async function createWorkflowSchedule(
   const workflow_id = validateWorkflowId(input.workflow_id);
   const cron_expression = validateCron(input.cron_expression);
   const timezone = validateTimezone(input.timezone);
-  // Mastra's /start-async always requires an `inputData` field (Zod-validated),
+  // Mastra's /start always requires an `inputData` field (Zod-validated),
   // even when the workflow takes no input — default to {} so callers that omit
   // `input_data` don't hit "expected object, received undefined".
   const body: Record<string, unknown> = {
@@ -264,7 +256,6 @@ export async function createWorkflowSchedule(
   if (typeof input.resource_id === "string" && input.resource_id.length > 0) {
     body.resourceId = input.resource_id;
   }
-  const path = `${MASTRA_API_PREFIX}/workflows/${encodeURIComponent(workflow_id)}/start-async`;
   const id = crypto.randomUUID();
   const { data, error } = await db()
     .from("schedules")
@@ -273,12 +264,12 @@ export async function createWorkflowSchedule(
       user_id: userId,
       label: validateLabel(input.label),
       workflow_id,
-      path,
       body,
       cron_expression,
       timezone,
       cron_job_name: cronJobName(id),
       enabled: input.enabled ?? true,
+      public_url: getAppUrl(),
     })
     .select()
     .single();
@@ -293,7 +284,7 @@ export async function updateSchedule(
   id: string,
   patch: UpdateSchedulePatch,
 ): Promise<Schedule> {
-  await getSchedule(userId, id); // existence + ownership check
+  const existing = await getSchedule(userId, id); // existence + ownership check
 
   const updates: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
@@ -301,9 +292,23 @@ export async function updateSchedule(
   if (patch.cron_expression !== undefined)
     updates.cron_expression = validateCron(patch.cron_expression);
   if (patch.timezone !== undefined) updates.timezone = validateTimezone(patch.timezone);
-  if (patch.body !== undefined) updates.body = validateBody(patch.body);
   if (patch.label !== undefined) updates.label = validateLabel(patch.label);
   if (patch.enabled !== undefined) updates.enabled = Boolean(patch.enabled);
+  if (patch.input_data !== undefined || patch.resource_id !== undefined) {
+    const current = (existing.body as Record<string, unknown> | null) ?? {};
+    const nextBody: Record<string, unknown> = { ...current };
+    if (patch.input_data !== undefined) {
+      nextBody.inputData = patch.input_data;
+    }
+    if (patch.resource_id !== undefined) {
+      if (typeof patch.resource_id === "string" && patch.resource_id.length > 0) {
+        nextBody.resourceId = patch.resource_id;
+      } else {
+        delete nextBody.resourceId;
+      }
+    }
+    updates.body = nextBody;
+  }
 
   const { data, error } = await db()
     .from("schedules")
@@ -369,8 +374,13 @@ export async function getRun(
 
 export async function fireSchedule(userId: string, id: string): Promise<void> {
   await getSchedule(userId, id);
-  const { error } = await db().rpc("scheduler_fire", { sid: id });
-  if (error) throw error;
+  const res = await fetch(
+    `${getAppUrl()}/api/schedules/internal/fire?sid=${id}`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    throw new Error(`Fire endpoint returned ${res.status}`);
+  }
 }
 
 async function syncCron(id: string): Promise<void> {

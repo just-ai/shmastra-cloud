@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.84.0",
-    "@mastra/e2b": "^0.1.2",
+    "@mastra/client-js": "^1.14.2",
+    "@mastra/e2b": "^0.2.0",
     "@supabase/supabase-js": "^2.49.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@workos-inc/authkit-nextjs": "^3.0.0",
@@ -29,7 +30,6 @@
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
-    "@mastra/client-js": "^1.13.4",
     "@mastra/core": "^1.25.0",
     "@mastra/libsql": "^1.8.1",
     "@mastra/memory": "^1.15.1",

@@ -17,7 +17,7 @@ const TEMPLATE = "shmastra";
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const APP_PORT = 4111;
 const PROBE_TIMEOUT_MS = 3000;
-const READY_ENDPOINT = "/api/auth/me";
+const READY_ENDPOINT = "/health";
 const STARTUP_TIMEOUT_MS = 180 * 1000;
 const STARTUP_POLL_INTERVAL_MS = 3000;
 

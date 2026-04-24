@@ -1,6 +1,6 @@
 ---
 name: shmastra-scheduler
-description: "Schedule workflows, agents and custom URLs to run on cron via the `shmastra_cloud` tools. Use whenever the user wants something to run periodically — every morning, every hour, once a week."
+description: "How to schedule workflows, agents and custom URLs to run on cron. Read this skill before creating schedule whenever the user wants something to run periodically or poll some API."
 ---
 
 # Scheduling workflows on cron
@@ -20,9 +20,51 @@ Rationale: workflows give a run id, a pollable status, typed input/output, retry
 
 2. **Make sure the workflow exists.** If not, create one (see "Wrapping patterns" below). The workflow's id becomes the schedule's `workflow_id`.
 
-3. **Call `shmastra_cloud_create_workflow_schedule`.** Convert the user's time to a UTC cron; pass their IANA timezone so the UI can render it back in their zone.
+3. **Create the schedule** (see "Creating a schedule" below).
 
 4. **Confirm in the user's own language.** Describe the cron in natural language ("every day at 09:00 Moscow time"), mention the `label`, and tell them they can pause it or see history. Don't surface schedule ids or internal identifiers.
+
+## Creating a schedule
+
+Call `shmastra_cloud_create_workflow_schedule` with:
+
+- **`workflow_id`** — the id the workflow is registered with on the `mastra` instance. Must match `/^[A-Za-z0-9_.-]+$/`.
+- **`cron_expression`** — 5- or 6-field cron, **UTC**. Convert the user's local time to UTC once, at creation time.
+- **`timezone`** — the user's IANA zone (e.g. `"Europe/Moscow"`). Stored for display only; does *not* affect firing.
+- **`label`** — 2–5 words in the user's language; how they recognize and reference the schedule later. Required.
+- **`input_data`** — object matching the workflow's `inputSchema` (see "input_data" below). Required.
+- **`resource_id`** — optional; rarely needed.
+- **`enabled`** — optional, defaults `true`.
+
+Example: schedule the `dailySummary` workflow every weekday at 09:00 Moscow time for a user in `Europe/Moscow`:
+
+```json
+{
+  "workflow_id": "dailySummary",
+  "cron_expression": "0 6 * * 1-5",
+  "timezone": "Europe/Moscow",
+  "label": "Weekday morning digest",
+  "input_data": { "since": "yesterday" }
+}
+```
+
+Note `0 6` UTC = `09:00` Moscow (UTC+3).
+
+## input_data
+
+**`input_data` is an object, never a bare string/number/array.** It's passed verbatim to the workflow as `inputData` and is Zod-validated against the workflow's `inputSchema`. Mismatched shape → the run fails at `create-run` with a validation error.
+
+Before scheduling, read the workflow's `inputSchema` to know the shape. If the user already supplied concrete values ("summarize tickets since yesterday"), map them into the schema keys. If the schema is empty, pass `{}`.
+
+Examples of `input_data` for different workflows:
+
+- `z.object({ url: z.string().url() })` → `{ "url": "https://example.com/health" }`
+- `z.object({})` (no input) → `{}`
+- `z.object({ since: z.string().optional() })` → `{}` (uses default) or `{ "since": "1d" }`
+
+If the user wants *one* workflow to run on many targets (e.g. pinging several URLs on different crons), create *multiple* schedules with different `input_data` — don't invent a list field in the workflow.
+
+Updating `input_data` later: call `shmastra_cloud_update_schedule` with the new object; it replaces `inputData` entirely (no merge).
 
 ## Wrapping patterns
 
