@@ -35,8 +35,6 @@ create table if not exists schedules (
   updated_at        timestamptz not null default now()
 );
 
-alter table schedules add column if not exists public_url text;
-
 create index if not exists schedules_user_enabled_idx
   on schedules (user_id, enabled);
 
@@ -56,19 +54,18 @@ create table if not exists schedule_runs (
   workflow_status     text,
   workflow_result     jsonb,
   workflow_error      text,
-  -- OpenTelemetry trace id. Fetched via a second GET to
-  -- /observability/traces?metadata={runId} once the run hits a terminal
-  -- state. Capped at 2 attempts.
+  -- OpenTelemetry trace id. Fetched via a second GET to `trace_url` once the
+  -- run hits a terminal state. Capped at 2 attempts.
   trace_id            text,
   trace_request_id    bigint,
   trace_attempts      int not null default 0,
-  -- `poll_url` is baked in by the fire handler.
+  -- `poll_url` and `trace_url` are baked in by the fire handler so SQL here
+  -- never has to reconstruct Mastra API paths.
   poll_url            text,
+  trace_url           text,
   poll_request_id     bigint,
   last_polled_at      timestamptz
 );
-
-alter table schedule_runs add column if not exists response_snippet text;
 
 create index if not exists schedule_runs_schedule_sent_idx
   on schedule_runs (schedule_id, sent_at desc);
@@ -180,7 +177,6 @@ declare
   v_vk text;
   v_headers jsonb;
   v_req_id bigint;
-  v_trace_url text;
 begin
   -- (1) Merge landed /runs/:id poll responses.
   update schedule_runs sr
@@ -268,7 +264,7 @@ begin
 
   -- (4) Dispatch trace-id lookups for terminal runs that don't yet have one.
   for dispatch_row in
-    select sr.id as run_row_id, sr.poll_url, sr.workflow_run_id, s.user_id
+    select sr.id as run_row_id, sr.trace_url, s.user_id
     from schedule_runs sr
     join schedules s on s.id = sr.schedule_id
     where sr.workflow_run_id is not null
@@ -276,22 +272,14 @@ begin
       and sr.trace_id is null
       and sr.trace_request_id is null
       and sr.trace_attempts < 2
-      and sr.poll_url is not null
+      and sr.trace_url is not null
   loop
     select virtual_key into v_vk from users where id = dispatch_row.user_id;
     v_headers := jsonb_build_object(
       'Authorization', 'Bearer ' || coalesce(v_vk, '')
     );
-    v_trace_url := regexp_replace(
-      dispatch_row.poll_url,
-      '/workflows/[^/]+/runs/[^/]+$',
-      '/observability/traces'
-    ) || '?metadata=%7B%22runId%22%3A%22'
-      || dispatch_row.workflow_run_id
-      || '%22%7D&pagination%5BperPage%5D=1';
-
     select net.http_get(
-      url := v_trace_url,
+      url := dispatch_row.trace_url,
       headers := v_headers,
       timeout_milliseconds := 15000
     ) into v_req_id;

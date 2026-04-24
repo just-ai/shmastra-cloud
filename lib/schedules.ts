@@ -1,5 +1,7 @@
 import { db } from "./db";
 import { getAppUrl } from "./app-url";
+import { ERROR_DISPLAY_MAX } from "./schedule-trim";
+import { runScheduleFire } from "./schedule-fire";
 
 export type Schedule = {
   id: string;
@@ -31,6 +33,7 @@ export type ScheduleRun = {
   workflow_result: unknown;
   workflow_error: string | null;
   trace_id: string | null;
+  trace_url: string | null;
   last_polled_at: string | null;
 };
 
@@ -63,12 +66,10 @@ export type ScheduleRunSummary = {
   error_message: string | null;
 };
 
-const MAX_ERROR_LENGTH = 1024;
-
 function trimError(text: string | null): string | null {
   if (!text) return null;
-  return text.length > MAX_ERROR_LENGTH
-    ? text.slice(0, MAX_ERROR_LENGTH) + "…"
+  return text.length > ERROR_DISPLAY_MAX
+    ? text.slice(0, ERROR_DISPLAY_MAX) + "…"
     : text;
 }
 
@@ -373,14 +374,10 @@ export async function getRun(
 }
 
 export async function fireSchedule(userId: string, id: string): Promise<void> {
-  await getSchedule(userId, id);
-  const res = await fetch(
-    `${getAppUrl()}/api/schedules/internal/fire?sid=${id}`,
-    { method: "POST" },
-  );
-  if (!res.ok) {
-    throw new Error(`Fire endpoint returned ${res.status}`);
-  }
+  await getSchedule(userId, id); // ownership check
+  // Call the fire logic in-process; the internal HTTP route is just an
+  // adapter for pg_cron. No reason to self-HTTP for user-initiated fires.
+  await runScheduleFire(id);
 }
 
 async function syncCron(id: string): Promise<void> {
