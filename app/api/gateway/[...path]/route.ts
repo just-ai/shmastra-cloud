@@ -30,7 +30,8 @@ async function maybeExtendSandbox(userId: string) {
 const PROVIDER_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com/v1",
-  gemini: "https://generativelanguage.googleapis.com",
+  gemini: "https://generativelanguage.googleapis.com/v1beta",
+  google: "https://generativelanguage.googleapis.com/v1beta",
   composio: "https://backend.composio.dev",
 };
 
@@ -38,6 +39,7 @@ const PROVIDER_ENV_KEYS: Record<string, string> = {
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
   gemini: "GOOGLE_GENERATIVE_AI_API_KEY",
+  google: "GOOGLE_GENERATIVE_AI_API_KEY",
   composio: "COMPOSIO_API_KEY",
 };
 
