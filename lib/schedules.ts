@@ -6,10 +6,7 @@ import {
   ScheduleNotFoundError,
   ScheduleValidationError,
 } from "./schedule-errors";
-import {
-  fetchWorkflowInputSchema,
-  validateInputData,
-} from "./workflow-schema";
+import { validateWorkflowInput } from "./workflow-schema";
 
 // Re-export so existing consumers (route handlers, mcp-server) keep importing
 // error classes from here — the canonical definition lives in ./schedule-errors
@@ -252,8 +249,7 @@ export async function createWorkflowSchedule(
   // write anything. Catches both "{}" vs required fields and unknown workflow
   // ids; ScheduleValidationError carries an agent-readable retry message.
   const inputData = input.input_data ?? {};
-  const schema = await fetchWorkflowInputSchema(userId, workflow_id);
-  validateInputData(inputData, schema, workflow_id);
+  await validateWorkflowInput(userId, workflow_id, inputData, { kind: "create" });
 
   // Mastra's /start always requires an `inputData` field (Zod-validated),
   // even when the workflow takes no input — default to {} so callers that omit
@@ -306,8 +302,12 @@ export async function updateSchedule(
     // Only validate when the agent actually supplies new input_data — an
     // update that only tweaks resource_id/cron shouldn't wake the sandbox.
     if (patch.input_data !== undefined) {
-      const schema = await fetchWorkflowInputSchema(userId, existing.workflow_id);
-      validateInputData(patch.input_data, schema, existing.workflow_id);
+      await validateWorkflowInput(
+        userId,
+        existing.workflow_id,
+        patch.input_data,
+        { kind: "update", scheduleId: id },
+      );
     }
 
     const current = (existing.body as Record<string, unknown> | null) ?? {};

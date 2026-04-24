@@ -133,6 +133,16 @@ For anything more complex (multi-step, conditional, parallel), read the **mastra
 - **Status flow.** `pending` → `running` → terminal (`success`, `failed`, `canceled`, `bailed`, `tripwire`). `pending` on a just-fired run usually settles within ~1 min.
 - **Use `shmastra_cloud_list_runs` for history.** It returns trimmed summaries. Only call `shmastra_cloud_get_run` when you need the full `workflow_result` or raw response body to diagnose a failure — payloads can be large.
 
+## Diagnosing failed runs
+
+When `list_runs` shows `workflow_status: "failed"`, the `workflow_error` field is shaped to tell you exactly what to do:
+
+- **Starts with `The scheduled input_data no longer matches …`** — the workflow's `inputSchema` was changed after this schedule was created. The message lists every mismatch and embeds the new schema. Call `shmastra_cloud_update_schedule({ id, input_data: <corrected> })`. **Do not create a new schedule** — the existing one is still wired correctly, only its stored input drifted.
+- **Starts with `Workflow "…" was registered when this schedule was created but isn't anymore`** — the target workflow was removed, renamed, or un-exported from `src/mastra`. Either restore it or call `shmastra_cloud_delete_schedule({ id })`.
+- **Any other `workflow_error`** — show it to the user. If the user asks for more detail, call `shmastra_cloud_get_run({ id })` for the full `workflow_result` / `response_snippet`.
+
+All of these are retryable through the tools — they are not system failures and don't need to be reported to the user as "the scheduler is broken".
+
 ## Things that are NOT your problem
 
 - **Auth.** The cloud injects the Authorization header at fire time; never put keys in `body` or `input_data`.

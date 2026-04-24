@@ -3,6 +3,8 @@ import { db } from "./db";
 import { connectToSandbox } from "./sandbox";
 import { MASTRA_API_PREFIX } from "./mastra-constants";
 import { RESPONSE_SNIPPET_MAX } from "./schedule-trim";
+import { ScheduleValidationError } from "./schedule-errors";
+import { validateWorkflowInputWithClient } from "./workflow-schema";
 
 // Fire path orchestration in one place. Called directly by the WorkOS-auth'd
 // manual-fire route and by the pg_cron-triggered /api/schedules/internal/fire
@@ -29,6 +31,7 @@ export type FireOutcome =
   | { kind: "disabled-or-missing" }
   | { kind: "no-sandbox" }
   | { kind: "wake-failed"; error: string }
+  | { kind: "validation-failed"; error: string }
   | { kind: "create-run-failed"; error: string }
   | { kind: "start-failed"; error: string; runId: string }
   | { kind: "started"; runId: string };
@@ -153,6 +156,26 @@ export async function runScheduleFire(sid: string): Promise<FireOutcome> {
   const inputData =
     (schedule.body as { inputData?: Record<string, unknown> } | null)?.inputData ?? {};
   const resourceId = (schedule.body as { resourceId?: string } | null)?.resourceId;
+
+  // Pre-validate against the workflow's live inputSchema. Catches the case
+  // where the user edited the workflow after creating this schedule: instead
+  // of Mastra failing at /start with a raw Zod dump buried in
+  // response_snippet, we surface the mismatch as workflow_error with a
+  // precise "call update_schedule" instruction. list_runs sees it directly.
+  try {
+    await validateWorkflowInputWithClient(client, schedule.workflow_id, inputData, {
+      kind: "fire-drift",
+      scheduleId: schedule.id,
+    });
+  } catch (err) {
+    if (err instanceof ScheduleValidationError) {
+      await recordRun(schedule.id, null, null, null, Date.now() - start, null, null, {
+        error: err.message,
+      });
+      return { kind: "validation-failed", error: err.message };
+    }
+    throw err;
+  }
 
   let runId: string | null = null;
   let pollUrl: string | null = null;
