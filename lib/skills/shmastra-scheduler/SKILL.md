@@ -20,9 +20,9 @@ Rationale: workflows give a run id, a pollable status, typed input/output, retry
 
 2. **Make sure the workflow exists.** If not, create one (see "Wrapping patterns" below). The workflow's id becomes the schedule's `workflow_id`.
 
-3. **Call `shmastra_cloud_create_workflow_schedule`** with `workflow_id`, `cron_expression`, and any `input_data`.
+3. **Call `shmastra_cloud_create_workflow_schedule`.** Convert the user's time to a UTC cron; pass their IANA timezone so the UI can render it back in their zone.
 
-4. **Confirm success to the user.** Reply in the user's own language. Describe the cron expression in natural language ("every day at 09:00 Moscow time"), mention the schedule's `name`, and tell them they can pause it with "pause the X schedule" or see history with "show runs of X". Don't surface the schedule id or internal identifiers.
+4. **Confirm in the user's own language.** Describe the cron in natural language ("every day at 09:00 Moscow time"), mention the `label`, and tell them they can pause it or see history. Don't surface schedule ids or internal identifiers.
 
 ## Wrapping patterns
 
@@ -82,83 +82,15 @@ export const pingWorkflow = createWorkflow({
 
 For anything more complex (multi-step, conditional, parallel), read the **mastra** skill first — don't guess workflow APIs.
 
-## Tools reference
+## Conventions
 
-### `shmastra_cloud_create_workflow_schedule`
-
-```json
-{
-  "workflow_id": "dailySummary",
-  "input_data": { "since": "2026-04-20T00:00:00Z" },
-  "cron_expression": "0 6 * * *",
-  "timezone": "Europe/Moscow",
-  "name": "Daily support summary"
-}
-```
-
-- `workflow_id` — must match the id registered in `mastra` (not a filename). Characters: `A-Z a-z 0-9 _ . -`.
-- `input_data` — any JSON-serialisable value. Becomes `inputData` in the workflow.
-- `cron_expression` — 5- or 6-field cron, **evaluated in UTC**. The user's current time and timezone are already available to you in context — convert their request to a UTC cron yourself. Examples: `"0 6 * * *"` = 06:00 UTC every day; `"*/15 * * * *"` = every 15 min.
-- `timezone` — IANA zone, informational; use the user's zone from your context so the UI can display the schedule correctly.
-- `name` — display label. Always set one so the user can refer to the schedule later by name.
-- `enabled` — defaults `true`. Pass `false` to create paused.
-
-### `shmastra_cloud_list_schedules`
-
-No arguments. Returns all schedules for this user, newest first. Each row has `id`, `name`, `workflow_id`, `cron_expression`, `timezone`, `enabled`, `last_run_at`.
-
-### `shmastra_cloud_get_schedule({ id })`
-
-Fetch a single schedule.
-
-### `shmastra_cloud_update_schedule({ id, ...patch })`
-
-Patch any of `cron_expression`, `timezone`, `name`, `enabled`, `body`. To pause: `{ id, enabled: false }`. To resume: `{ id, enabled: true }`.
-
-### `shmastra_cloud_delete_schedule({ id })`
-
-Removes the schedule and stops its cron job.
-
-### `shmastra_cloud_list_runs({ schedule_id, limit? })`
-
-Recent executions, newest first. Each run has:
-
-- `workflow_run_id` — the Mastra run id (stable across polls).
-- `workflow_status` — `pending` → `running` → `success` / `failed` / `terminated`. `pending` means the kick-off happened; the status settles within ~1 min.
-- `workflow_result` — the workflow's output (on success).
-- `workflow_error` — error text (on failure).
-- `sent_at`, `duration_ms`, `last_polled_at` — timing.
-
-## Common tasks
-
-### "Run my agent every morning at 9"
-
-1. Pick the agent (list them if ambiguous).
-2. If a wrapping workflow doesn't exist, create one with `createAgentStep` as shown above and register it.
-3. Convert `09:00` in the user's timezone (available to you in context) to a UTC cron expression.
-4. Call `shmastra_cloud_create_workflow_schedule` with a descriptive `name`.
-5. Confirm in the user's language.
-
-### "Show me what's scheduled"
-
-Call `shmastra_cloud_list_schedules`. Render as a table with `name`, cron in natural language, next run in the user's timezone, enabled/paused.
-
-### "Pause that daily job"
-
-Find it via `shmastra_cloud_list_schedules` by name, call `update_schedule({ id, enabled: false })`.
-
-### "Why didn't my schedule run last night?"
-
-Call `shmastra_cloud_list_runs({ schedule_id })`. Look at the most recent rows:
-
-- No row where one was expected → the sandbox was paused at that moment, or `cron_expression` was wrong.
-- `workflow_status: "pending"` older than a few minutes → status hasn't settled yet, or the workflow is genuinely long-running.
-- `workflow_status: "failed"` → show `workflow_error`.
-- `error_message` set before any HTTP call → the user had no active sandbox at tick time.
+- **Cron is UTC.** Convert the user's time to UTC once, at schedule creation. Always pass their IANA `timezone` so the UI can display it back in the user's zone.
+- **`label` is how humans find it.** 2–5 words in the user's language. To resolve references like "pause the daily digest", call `shmastra_cloud_list_schedules` and match on `label` or `workflow_id`.
+- **Status flow.** `pending` → `running` → terminal (`success`, `failed`, `canceled`, `bailed`, `tripwire`). `pending` on a just-fired run usually settles within ~1 min.
+- **Use `shmastra_cloud_list_runs` for history.** It returns trimmed summaries. Only call `shmastra_cloud_get_run` when you need the full `workflow_result` or raw response body to diagnose a failure — payloads can be large.
 
 ## Things that are NOT your problem
 
 - **Auth.** The cloud injects the Authorization header at fire time; never put keys in `body` or `input_data`.
 - **URL composition.** You only pass `workflow_id` — the cloud handles the rest.
-- **Timezone conversion for pg_cron.** Cron runs in UTC; you convert once when creating the schedule, using the user's timezone from your context.
-- **Polling.** Fire-and-forget is built-in. You don't have to poll `shmastra_cloud_list_runs` yourself — the cloud keeps `workflow_status` fresh until the run reaches a terminal state.
+- **Polling.** Fire-and-forget is built-in. The cloud keeps `workflow_status` fresh until the run reaches a terminal state.
