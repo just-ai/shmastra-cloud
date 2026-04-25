@@ -26,7 +26,7 @@ function requireString(args: Record<string, unknown>, key: string): string {
 const tools: Tool[] = [
   {
     name: "list_schedules",
-    description: "List the current user's schedules (summary).",
+    description: "List the current user's schedules (summary). Read shmastra-scheduler skill before calling this tool.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: async (userId) => (await listSchedules(userId)).map(toScheduleSummary),
   },
@@ -46,7 +46,7 @@ const tools: Tool[] = [
   },
   {
     name: "create_workflow_schedule",
-    description: "Schedule a Mastra workflow on cron. Fire-and-forget.",
+    description: "Schedule a Mastra workflow on cron. Fire-and-forget. Read shmastra-scheduler skill before calling this tool.",
     inputSchema: {
       type: "object",
       properties: {
@@ -67,7 +67,7 @@ const tools: Tool[] = [
         },
         label: {
           type: "string",
-          description: "Short UI label in the user's language, 2–5 words.",
+          description: "Short UI description of this schedule in the user's language.",
         },
         enabled: { type: "boolean", description: "Defaults true." },
       },
@@ -84,7 +84,7 @@ const tools: Tool[] = [
   },
   {
     name: "update_schedule",
-    description: "Patch schedule fields. Pass `id` and any of the others.",
+    description: "Patch schedule fields. Pass `id` and any of the others. Read shmastra-scheduler skill before calling this tool.",
     inputSchema: {
       type: "object",
       properties: {
@@ -115,7 +115,7 @@ const tools: Tool[] = [
   },
   {
     name: "delete_schedule",
-    description: "Delete a schedule.",
+    description: "Delete a schedule. Read shmastra-scheduler skill before calling this tool.",
     inputSchema: {
       type: "object",
       properties: {
@@ -131,7 +131,7 @@ const tools: Tool[] = [
   },
   {
     name: "list_runs",
-    description: "List recent run summaries (newest first). Omits workflow_result and response_snippet — fetch with `get_run` if needed.",
+    description: "List recent run summaries (newest first). Omits workflow_result and response_snippet — fetch with `get_run` if needed. Read shmastra-scheduler skill before calling this tool.",
     inputSchema: {
       type: "object",
       properties: {

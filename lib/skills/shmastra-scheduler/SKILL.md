@@ -1,17 +1,20 @@
 ---
 name: shmastra-scheduler
-description: "Read this before scheduling anything on cron. Explains the one rule (only workflows are scheduled) and how to wrap an agent or an HTTP call into a minimal workflow."
+description: "How to schedule workflows, agents and custom logic or HTTP API calls to run on cron. Read this skill for ANY user interaction related to scheduling, cron, or periodic execution including: creating a new schedule, viewing, listing, pausing, editing, or deleting existing schedules"
 ---
 
 # Scheduling on cron
 
 ## The one rule
 
-**Only workflows get scheduled.** There is no "schedule this agent" or "schedule this webhook". Wrap any agent call, HTTP call, or custom logic in a Mastra workflow first; its id becomes the schedule's `workflow_id`.
+**Only workflows get scheduled.** 
+Wrap any agent call, HTTP call, or custom logic in a Mastra workflow first; its id becomes the schedule's `workflow_id`.
 
 ## Wrapping an agent — use `createAgentStep`
 
-Don't hand-roll `createStep({ execute: () => agent.generate(...) })`. If the agent has observable memory, `generate` without a `thread` fails. Use the helper Shmastra exposes — it attaches a fresh thread/resource per run and disables observational memory, which is the correct shape for a scheduled one-shot.
+Don't hand-roll `createStep({ execute: () => agent.generate(...) })`. 
+If the agent has observable memory, `generate` without a `thread` fails. 
+Use the helper Shmastra exposes — it attaches a fresh thread/resource per run and disables observational memory, which is the correct shape for a scheduled one-shot.
 
 ```ts
 // src/mastra/workflows/daily-summary.ts
@@ -37,7 +40,8 @@ Register the workflow on the `mastra` instance — follow the **mastra** skill f
 
 ## Wrapping an HTTP call (local custom route or external URL)
 
-Same pattern either way — wrap `fetch` in a step and pass the target URL through `inputData` so one workflow can serve many schedules. A "local custom route" is a Hono route the user registered in `src/mastra/routes.ts` at `http://localhost:4111/...`; an "external URL" is any other host.
+Same pattern either way — wrap `fetch` in a step and pass the target URL through `inputData` so one workflow can serve many schedules. 
+A "local custom route" is a Hono route the user registered in `src/mastra/routes.ts`.
 
 ```ts
 import { createWorkflow, createStep } from "@mastra/core/workflows";
@@ -70,3 +74,20 @@ For multi-step / conditional / parallel workflows, read the **mastra** skill fir
 - **Failure messages are self-contained.** If a tool call or a run fails, the error text tells you which tool to call next with which args — follow it. Don't invent remedies; don't create a new schedule when the error says "update".
 
 Auth, URL composition, and polling are handled by the cloud — you only pass `workflow_id` + `input_data`.
+
+## Apply code changes before scheduling
+
+`create_workflow_schedule` / `update_schedule` validate `input_data` against the workflow's `inputSchema` fetched from the **running** Mastra server. 
+If you just edited workflow code, the server still has the old schema — your schedule call will validate against it.
+
+`apply_changes` is asynchronous: it returns immediately, but the actual restart happens only after you end the current turn. 
+Calling a schedule tool in the same turn after `apply_changes` will hit the old server.
+
+**Right flow:**
+
+1. Edit the workflow code.
+2. Call `apply_changes` with `notify: true` — this queues the restart and asks the runtime to re-invoke you once it's done.
+3. **End the turn.** Tell the user the changes are being applied and that you'll create the schedule once the server is back.
+4. When you're re-invoked with the apply-completed notification, call `create_workflow_schedule` / `update_schedule`.
+
+If you skip apply (or try to schedule before the next turn), validation runs against the old schema and either fails or — worse — silently passes against the stale shape.

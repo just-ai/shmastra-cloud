@@ -8,7 +8,7 @@ import {
   type Toolset,
 } from "./types";
 
-const PROTOCOL_VERSION = "2024-11-05";
+const PROTOCOL_VERSION = "2025-06-18";
 
 export type McpServerOptions = {
   name: string;
@@ -96,28 +96,36 @@ export function createMcpServer(options: McpServerOptions) {
         }
         try {
           const result = await tool.handler(userId, params.arguments ?? {});
-          return success(id, {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          });
+          // MCP 2025-06-18 requires structuredContent to be a record/object —
+          // arrays and primitives are rejected by the client's Zod check. Wrap
+          // arrays as { items: [...] } so handlers can keep returning the
+          // shape that fits the data, not the protocol's envelope.
+          const structuredContent = Array.isArray(result) ? { items: result } : result;
+          return success(id, { structuredContent });
         } catch (err) {
+          // Tool-execution errors all go through isError:true (not the
+          // JSON-RPC `error` envelope, which is reserved for protocol-level
+          // faults like unknown method). We pair the human text with a
+          // structuredContent object so clients can read err.kind / message
+          // typed instead of parsing strings.
+          let kind = "internal";
+          let message = "Tool execution failed";
           if (err instanceof ScheduleValidationError) {
-            return success(id, {
-              isError: true,
-              content: [{ type: "text", text: `Validation error: ${err.message}` }],
-            });
+            kind = "validation";
+            message = err.message;
+          } else if (err instanceof ScheduleNotFoundError) {
+            kind = "not_found";
+            message = err.message;
+          } else if (err instanceof Error) {
+            message = err.message;
+            console.error(`MCP tool ${tool.name} failed`, err);
+          } else {
+            console.error(`MCP tool ${tool.name} failed`, err);
           }
-          if (err instanceof ScheduleNotFoundError) {
-            return success(id, {
-              isError: true,
-              content: [{ type: "text", text: err.message }],
-            });
-          }
-          console.error(`MCP tool ${tool.name} failed`, err);
-          return errorResponse(
-            id,
-            ERROR.INTERNAL,
-            err instanceof Error ? err.message : "Tool execution failed",
-          );
+          return success(id, {
+            isError: true,
+            structuredContent: { error: { kind, message } },
+          });
         }
       }
 
