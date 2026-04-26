@@ -89,11 +89,30 @@ export async function updateSandbox(
     // Only flag the phase as errored on an actual error. On stop, leave the
     // phase in "running" and let the UI color by the overall "stopped" status.
     if (currentPhase && !stopped) onPhase(currentPhase, "error");
-    // If migratePhase swapped a new-schema .duckdb set into MAIN_DIR before
-    // the failure, roll it back. Without this, ensurePm2Running below would
-    // start pm2 on the OLD code (apply hadn't completed) against the NEW
-    // schema — signal-table migrations are destructive (DROP/RECREATE), so
-    // old code can't talk to new tables.
+    // Roll MAIN_DIR back to its pre-update state so ensurePm2Running below
+    // brings pm2 up on a consistent (old code, old schema, matching deps)
+    // snapshot — not a half-applied update. Order matters:
+    //   1. git reset to the captured pre-update HEAD — restores source +
+    //      package.json + lockfile.
+    //   2. swap .duckdb back from the pre-migration backup — undoes the
+    //      destructive signal-table migration so old code can talk to old
+    //      tables again.
+    //   3. pnpm install on the rolled-back tree — re-pins node_modules to
+    //      old package.json, in case applyPhase already ran a new install
+    //      that left deps out of sync with the now-restored code.
+    if (ctx.state.preUpdateHead) {
+      try {
+        log(`Rolling back MAIN_DIR to ${ctx.state.preUpdateHead.slice(0, 7)}...`);
+        await run(
+          sandbox,
+          `git -C "${MAIN_DIR}" reset --hard ${ctx.state.preUpdateHead}`,
+          log,
+          { throwOnError: false },
+        );
+      } catch (resetErr: any) {
+        log(`✗ git reset failed: ${resetErr.message}`);
+      }
+    }
     if (ctx.state.observabilityBackupDir) {
       try {
         log("Rolling back .duckdb to pre-migration state...");
@@ -104,7 +123,20 @@ export async function updateSandbox(
           { throwOnError: false },
         );
       } catch (restoreErr: any) {
-        log(`✗ Rollback failed: ${restoreErr.message}`);
+        log(`✗ .duckdb rollback failed: ${restoreErr.message}`);
+      }
+    }
+    if (ctx.state.preUpdateHead) {
+      try {
+        log("Reinstalling deps for rolled-back tree...");
+        await run(
+          sandbox,
+          `cd "${MAIN_DIR}" && pnpm install`,
+          log,
+          { throwOnError: false, timeoutMs: 180_000 },
+        );
+      } catch (installErr: any) {
+        log(`✗ Reinstall failed: ${installErr.message}`);
       }
     }
     // On error, also try to revive pm2 so the user isn't left with a dead

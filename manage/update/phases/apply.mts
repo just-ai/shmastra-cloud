@@ -9,6 +9,17 @@ import { MAIN_DIR, WORKTREE_BRANCH, skipIfUpToDate, type PhaseCtx } from "./shar
 export async function applyPhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
   skipIfUpToDate(state);
 
+  // Capture pre-update HEAD before the merge advances it. updater.mts reads
+  // this in its catch block to roll MAIN_DIR back to its pre-update commit
+  // (paired with reinstalling deps) if any phase from here on out fails.
+  const headResult = await run(
+    sandbox,
+    `git -C "${MAIN_DIR}" rev-parse HEAD`,
+    log,
+    { signal },
+  );
+  state.preUpdateHead = headResult.stdout.trim();
+
   await run(sandbox, `git -C "${MAIN_DIR}" merge ${WORKTREE_BRANCH} --ff-only`, log, { signal });
 
   await run(sandbox, `cd "${MAIN_DIR}" && pnpm install`, log, {

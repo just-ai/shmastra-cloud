@@ -44,6 +44,13 @@ export interface UpdateState {
   // tables are recreated, not just altered — so leaving it in place after
   // a failed update breaks the running app).
   observabilityBackupDir?: string;
+  // MAIN_DIR's HEAD captured at the start of applyPhase, just before the
+  // ff-only merge. Set only when apply has actually started. updater.mts
+  // reads this in its catch block: if apply (or any later phase) fails
+  // after the merge advanced HEAD, we `git reset --hard` and reinstall to
+  // bring MAIN_DIR back to the pre-update commit + matching node_modules.
+  // Symmetric to observabilityBackupDir for the .duckdb files.
+  preUpdateHead?: string;
 }
 
 export interface PhaseCtx {
