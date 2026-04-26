@@ -69,6 +69,14 @@ for (const file of entries) {
     const migrated = !r.alreadyMigrated;
     files.push({ file, migrated, message: r.message });
     if (migrated) anyMigrated = true;
+    // Force a CHECKPOINT so all WAL contents (both pre-existing user data
+    // replayed from the source WAL and our migration's own writes) are
+    // flushed into the .duckdb base file. Without this, close() leaves a
+    // .wal next to .duckdb, and the caller copies only *.duckdb back to
+    // MAIN_DIR — losing every row that lived only in the WAL (in practice
+    // most/all of the user's traces and spans, since DuckDB doesn't
+    // auto-checkpoint on graceful close).
+    await obs.db.execute("CHECKPOINT");
   } catch (err: any) {
     console.error(JSON.stringify({ error: `${file}: ${err.message}` }));
     process.exit(2);
