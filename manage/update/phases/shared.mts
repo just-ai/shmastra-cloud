@@ -35,10 +35,6 @@ export interface UpdateState {
   // of the user's repo.
   upToDate?: boolean;
   pendingEnvs?: Record<string, string>;
-  // Set by migratePhase to true iff a real observability migration ran and
-  // staged DBs were left in WORKTREE_DIR/.storage. restartPhase reads this to
-  // decide whether to do the swap into MAIN_DIR/.storage.
-  observabilityMigrated?: boolean;
 }
 
 export interface PhaseCtx {

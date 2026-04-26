@@ -1,33 +1,29 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { run } from "../../sandbox.mjs";
-import { MAIN_DIR, WORKTREE_DIR, ensurePm2Running, skipIfUpToDate, type PhaseCtx } from "./shared.mjs";
+import { MAIN_DIR, WORKTREE_DIR, skipIfUpToDate, type PhaseCtx } from "./shared.mjs";
 
-// Migration runs against COPIES of the .duckdb files staged in the worktree:
-//   - Worktree has fresh node_modules from installPhase (correct @mastra/duckdb).
-//   - Original .duckdb files in MAIN_DIR/.storage stay untouched on failure.
-//   - On success, restartPhase copies the migrated files back to MAIN_DIR.
-//   - On failure, throw → updater catches → cleanup() in finally wipes the
-//     worktree → MAIN_DIR is untouched → user retries the update.
+// Migration runs AFTER build (the slow phase) so the user's app stays on old
+// code with pm2 alive throughout the install/build window. Once build is
+// green we stop pm2, snapshot .duckdb files, migrate the snapshot in the
+// worktree (which has fresh new-version node_modules), and copy migrated
+// files back into MAIN_DIR/.storage. pm2 stays down — apply, patch and
+// restart all run in a single down-window before pm2 comes back up on new
+// code in restartPhase.
 //
-// PM2 is briefly stopped *only for the snapshot*, then restarted with the
-// current (still-old) code so the user sees minimal downtime — build/apply
-// run with the user's app live; restartPhase later does the full
-// kill+swap+start cycle once everything is ready. DuckDB writes go through
-// a WAL file; while pm2 has the .duckdb open, recent writes live only in
-// the WAL and a raw `cp *.duckdb` would silently miss them — the staged
-// copy then looks like an empty DB and the migration script reports
-// "Migration not needed", while the live file in MAIN_DIR still contains
-// legacy schema and the post-update server start fails with "MIGRATION
-// REQUIRED". Stopping pm2 lets DuckDB checkpoint cleanly; we also glob
-// `*.duckdb*` to pick up any leftover .wal/.tmp companions as
-// defense-in-depth.
+// Why stop pm2 before snapshot: DuckDB writes go through a WAL file. While
+// pm2 has the .duckdb open, recent writes live only in the WAL — a raw
+// `cp *.duckdb` would silently miss them, the staged copy would look like
+// an empty DB, and the migration would report "Migration not needed" while
+// the live file in MAIN_DIR still contained legacy schema (post-update
+// server start would then fail with "MIGRATION REQUIRED"). Stopping pm2
+// lets DuckDB checkpoint cleanly; we also glob `*.duckdb*` to pick up any
+// leftover .wal/.tmp companions as defense-in-depth.
 //
-// Concurrent-write window: while pm2 is back up on old code (after the
-// snapshot, through build/apply/patch), it can write new spans to
-// MAIN_DIR/.storage. If migration ran, restartPhase swaps the migrated
-// copy back, overwriting those writes — but they were in the legacy
-// schema anyway and unreadable by the new code, so the loss is moot.
+// Why `rm -rf` the stage dir first: buildPhase ran `pnpm dry-run` in the
+// worktree, which uses `./.storage` by default and may have left
+// new-schema empty DBs there. We wipe before snapshotting so the migration
+// input is exactly MAIN_DIR/.storage at this instant.
 //
 // The migration script itself lives in scripts/sandbox/migration.mts and is
 // uploaded into the worktree just-in-time (same pattern as healer.mts).
@@ -44,7 +40,7 @@ export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): P
   const scriptContent = readFileSync(SCRIPT_LOCAL, "utf-8");
   await sandbox.files.write(SCRIPT_REMOTE, scriptContent, { user: "user" });
 
-  log("Stopping pm2 briefly so DuckDB can flush its WAL before snapshot...");
+  log("Stopping pm2 so DuckDB can flush its WAL before snapshot...");
   await run(sandbox, "pm2 delete all 2>/dev/null || true", log, { throwOnError: false, signal });
   await run(
     sandbox,
@@ -56,13 +52,10 @@ export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): P
   log("Snapshotting .storage/*.duckdb (incl. WAL/tmp companions) to worktree...");
   await run(
     sandbox,
-    `mkdir -p ${STAGE_DIR} && (cp -p ${MAIN_DIR}/.storage/*.duckdb* ${STAGE_DIR}/ 2>/dev/null || true)`,
+    `rm -rf ${STAGE_DIR} && mkdir -p ${STAGE_DIR} && (cp -p ${MAIN_DIR}/.storage/*.duckdb* ${STAGE_DIR}/ 2>/dev/null || true)`,
     log,
     { signal },
   );
-
-  log("Restarting pm2 on current code while build/apply run in worktree...");
-  await ensurePm2Running(sandbox, log, signal);
 
   log("Running observability migration in worktree...");
   const result = await run(
@@ -89,11 +82,15 @@ export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): P
       .filter((f: any) => f.migrated)
       .map((f: any) => f.file)
       .join(", ");
-    log(`✓ Migration applied — staged DBs (${migratedFiles}) will be swapped in restart phase`);
-    state.observabilityMigrated = true;
+    log(`Swapping migrated DBs (${migratedFiles}) into MAIN_DIR/.storage...`);
+    await run(
+      sandbox,
+      `mkdir -p ${MAIN_DIR}/.storage && cp -p ${STAGE_DIR}/*.duckdb ${MAIN_DIR}/.storage/`,
+      log,
+      { signal },
+    );
+    log("✓ Migration applied");
   } else {
     log(`✓ Migration not needed (${outcome.reason ?? "all files already migrated"})`);
-    // No flag set — restartPhase skips the swap and the stale staging dir
-    // dies along with the worktree in updater's `finally` cleanup.
   }
 }

@@ -2,11 +2,10 @@ import { run } from "../../sandbox.mjs";
 import { MAIN_DIR, WORKTREE_BRANCH, skipIfUpToDate, type PhaseCtx } from "./shared.mjs";
 
 // Fast-forward main and reinstall deps. PM2 is already down by the time we
-// get here — migratePhase killed it so DuckDB could checkpoint cleanly
-// before its snapshot. Worktree cleanup is handled by updater.mts in
-// `finally`, so the worktree stays available to the restart phase (which
-// copies migrated .duckdb files out of WORKTREE_DIR/.storage before bringing
-// pm2 back up).
+// get here — migratePhase stopped it (so DuckDB could checkpoint cleanly
+// before snapshot) and intentionally left it down so apply/patch/restart
+// run in a single pm2-down window before restartPhase brings it back up on
+// new code. Worktree cleanup is handled by updater.mts in `finally`.
 export async function applyPhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
   skipIfUpToDate(state);
 

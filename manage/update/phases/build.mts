@@ -2,8 +2,9 @@ import { run } from "../../sandbox.mjs";
 import { WORKTREE_DIR, skipIfUpToDate, type PhaseCtx } from "./shared.mjs";
 
 // Port for the dry-run boot. Anything other than 4111 — pm2 is still serving
-// the user with the old code on 4111 until restartPhase, so dry-run would
-// otherwise hit EADDRINUSE. dry-run forwards --port to its mastra-dev probe.
+// the user with old code on 4111 (migratePhase doesn't run until after
+// build), so dry-run would otherwise hit EADDRINUSE. dry-run forwards
+// --port to its mastra-dev probe.
 const DRY_RUN_PORT = 4222;
 
 // Dry-run the app, commit updated lockfile.

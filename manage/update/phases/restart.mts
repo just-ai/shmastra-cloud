@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { run } from "../../sandbox.mjs";
-import { MAIN_DIR, WORKTREE_DIR, ensurePm2Running, type PhaseCtx } from "./shared.mjs";
+import { ensurePm2Running, type PhaseCtx } from "./shared.mjs";
 
 const BOOTSTRAP_FILES: Array<{ local: string; remote: string; executable?: boolean }> = [
   { local: "../../../scripts/sandbox/healer.mts", remote: "/home/user/healer.mts" },
@@ -9,11 +9,10 @@ const BOOTSTRAP_FILES: Array<{ local: string; remote: string; executable?: boole
   { local: "../../../scripts/sandbox/start.sh", remote: "/home/user/start.sh", executable: true },
 ];
 
-const STAGE_DIR = `${WORKTREE_DIR}/.storage`;
-
-// Upload latest sandbox-side bootstrap files, swap any migrated .duckdb files
-// from the worktree staging dir into MAIN_DIR (atomic window between pm2-stop
-// in applyPhase and pm2-start here), then start shmastra + healer via pm2.
+// Upload latest sandbox-side bootstrap files, then start shmastra + healer
+// via pm2. pm2 has been down since migratePhase — apply and patch ran while
+// it was off — so this is the single bring-up on new code at the end of the
+// pipeline.
 export async function restartPhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
   const pendingEnvs = state.pendingEnvs;
   for (const { local, remote, executable } of BOOTSTRAP_FILES) {
@@ -24,20 +23,6 @@ export async function restartPhase({ sandbox, log, signal, state }: PhaseCtx): P
     if (executable) {
       await run(sandbox, `chmod +x ${remote}`, log, { throwOnError: false, signal });
     }
-  }
-
-  // Swap migrated observability DBs back into MAIN_DIR if migratePhase
-  // actually ran a migration. The state flag avoids an unnecessary cp on
-  // updates where nothing was migrated (which is most updates) — DuckDB
-  // files can be tens of MB.
-  if (state.observabilityMigrated) {
-    log("Swapping migrated observability DBs into MAIN_DIR/.storage...");
-    await run(
-      sandbox,
-      `mkdir -p ${MAIN_DIR}/.storage && cp -p ${STAGE_DIR}/*.duckdb ${MAIN_DIR}/.storage/`,
-      log,
-      { signal },
-    );
   }
 
   const additions = pendingEnvs ?? {};

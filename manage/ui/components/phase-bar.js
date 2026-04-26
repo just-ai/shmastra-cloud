@@ -1,6 +1,6 @@
 import { createElement as h } from "react";
 
-export const PHASES = ["fetch", "merge", "install", "migrate", "build", "apply", "patch", "restart"];
+export const PHASES = ["fetch", "merge", "install", "build", "migrate", "apply", "patch", "restart"];
 
 // Map explicit phase state (from `phase` SSE events) to a bar color. A phase
 // with no state entry hasn't been reached yet; a skipped phase is reached but
