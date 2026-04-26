@@ -55,11 +55,16 @@ for (const file of entries) {
   try {
     store = new DuckDBStore({ path });
     const obs = await store.getStore("observability");
-    await obs.init();
     if (typeof obs.migrateSpans !== "function") {
       files.push({ file, migrated: false, reason: "no migrateSpans method on store" });
       continue;
     }
+    // NB: do NOT call obs.init() here — in @mastra/duckdb >=1.2.0 init()
+    // throws "MIGRATION REQUIRED" before doing anything when legacy signal
+    // tables exist, which is precisely the case migrateSpans() is meant to
+    // fix. Calling migrateSpans() directly is what `mastra migrate` does
+    // too. After migration the running app's startup init() will create
+    // any missing tables via CREATE TABLE IF NOT EXISTS.
     const r = await obs.migrateSpans();
     const migrated = !r.alreadyMigrated;
     files.push({ file, migrated, message: r.message });
