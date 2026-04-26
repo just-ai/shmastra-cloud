@@ -172,9 +172,9 @@ Server log file (stdout + stderr combined):
 - .logs/shmastra.log
 
 Your job:
-1. Read logs tail to understand what went wrong.
-2. If the latest log entries show the server is running normally with no errors (e.g. "Ready in", successful requests, normal startup messages), do nothing.
-3. If the latest log entries show that server is starting but not ready yet - just wait 10s and read logs again. If it's still starting - inspect and fix.
+1. Read logs tail to understand what went wrong. You need only entries after the latest "Starting Mastra dev server" line in the log. Previous entries don't matter.
+2. If the latest log entries show the server is running normally with no errors (e.g. "Ready in", successful requests, normal startup messages), do nothing and finish.
+3. If the latest log entries show that server is starting but not ready yet - just wait for 10-15s and read logs again. If it's still starting - inspect and fix. Sometimes simple restarting helps.
 4. Inspect relevant source files to find the root cause.
 5. Fix the code — make minimal, targeted changes.
 6. Use the restart_shmastra tool to restart the server — it will wait for the process to settle and return the actual status.
