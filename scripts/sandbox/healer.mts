@@ -182,7 +182,9 @@ Your job:
 8. Once the server is online, commit your changes: git add -A && git commit -m "<short description of what you fixed>"
 
 Rules:
+- If server responds normally on port 4111 - do nothing and finish immediatelly.
 - NEVER ask questions or request clarification. Always take action.
+- NEVER inspect healer.log - it's your own log file.
 - Make minimal fixes only. Do not refactor or add features.
 - If the error is in user code, fix it.
 - Do not edit sources inside src/shmastra - it is internal framework.

@@ -196,9 +196,9 @@ export async function validateWorkflowInput(
       .maybeSingle(),
   ]);
 
-  if (!sandboxRow?.sandbox_id || sandboxRow.status !== "ready" || !userRow?.virtual_key) {
+  if (!sandboxRow?.sandbox_id || !userRow?.virtual_key) {
     throw new ScheduleValidationError(
-      "To validate input_data your sandbox must be running. Start it from /workspace and retry.",
+      "Sandbox is not ready",
     );
   }
 
