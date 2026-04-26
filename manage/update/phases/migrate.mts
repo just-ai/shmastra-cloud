@@ -60,10 +60,10 @@ export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): P
       .map((f: any) => f.file)
       .join(", ");
     log(`✓ Migration applied — staged DBs (${migratedFiles}) will be swapped in restart phase`);
+    state.observabilityMigrated = true;
   } else {
     log(`✓ Migration not needed (${outcome.reason ?? "all files already migrated"})`);
-    // Drop the stale snapshot so restartPhase doesn't see the staging dir and
-    // accidentally swap an outdated copy onto MAIN_DIR.
-    await run(sandbox, `rm -rf ${STAGE_DIR}`, log, { throwOnError: false, signal });
+    // No flag set — restartPhase skips the swap and the stale staging dir
+    // dies along with the worktree in updater's `finally` cleanup.
   }
 }

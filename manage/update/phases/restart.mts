@@ -26,16 +26,11 @@ export async function restartPhase({ sandbox, log, signal, state }: PhaseCtx): P
     }
   }
 
-  // Swap migrated observability DBs back into MAIN_DIR. migratePhase leaves
-  // staged copies in WORKTREE/.storage iff a migration ran; otherwise it
-  // removes the dir so we know "no files to swap" by file existence alone.
-  const stagedCheck = await run(
-    sandbox,
-    `ls ${STAGE_DIR}/*.duckdb 2>/dev/null | head -1`,
-    log,
-    { throwOnError: false, signal },
-  );
-  if (stagedCheck.stdout.trim()) {
+  // Swap migrated observability DBs back into MAIN_DIR if migratePhase
+  // actually ran a migration. The state flag avoids an unnecessary cp on
+  // updates where nothing was migrated (which is most updates) — DuckDB
+  // files can be tens of MB.
+  if (state.observabilityMigrated) {
     log("Swapping migrated observability DBs into MAIN_DIR/.storage...");
     await run(
       sandbox,
