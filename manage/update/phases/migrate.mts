@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { run } from "../../sandbox.mjs";
-import { MAIN_DIR, WORKTREE_DIR, SkipPhase, type PhaseCtx } from "./shared.mjs";
+import { MAIN_DIR, WORKTREE_DIR, skipIfUpToDate, type PhaseCtx } from "./shared.mjs";
 
 // Migration runs against COPIES of the .duckdb files staged in the worktree:
 //   - Worktree has fresh node_modules from installPhase (correct @mastra/duckdb).
@@ -21,7 +21,7 @@ const SCRIPT_REMOTE = `${WORKTREE_DIR}/migration.mts`;
 const STAGE_DIR = `${WORKTREE_DIR}/.storage`;
 
 export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
-  if (state.behind === 0) throw new SkipPhase("already up to date");
+  skipIfUpToDate(state);
 
   const scriptContent = readFileSync(SCRIPT_LOCAL, "utf-8");
   await sandbox.files.write(SCRIPT_REMOTE, scriptContent, { user: "user" });

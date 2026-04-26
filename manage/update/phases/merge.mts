@@ -1,10 +1,10 @@
 import { run, checkAbort } from "../../sandbox.mjs";
 import { resolveConflicts } from "../conflicts.mjs";
-import { MAIN_DIR, WORKTREE_DIR, WORKTREE_BRANCH, SkipPhase, updateBranch, type PhaseCtx } from "./shared.mjs";
+import { MAIN_DIR, WORKTREE_DIR, WORKTREE_BRANCH, skipIfUpToDate, updateBranch, type PhaseCtx } from "./shared.mjs";
 
 // Add worktree, merge origin/<branch>, resolve conflicts if any.
 export async function mergePhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
-  if (state.behind === 0) throw new SkipPhase("already up to date");
+  skipIfUpToDate(state);
   const branch = updateBranch();
   log(`Merging origin/${branch}...`);
 

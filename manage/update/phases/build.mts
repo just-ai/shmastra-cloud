@@ -1,9 +1,9 @@
 import { run } from "../../sandbox.mjs";
-import { WORKTREE_DIR, SkipPhase, type PhaseCtx } from "./shared.mjs";
+import { WORKTREE_DIR, skipIfUpToDate, type PhaseCtx } from "./shared.mjs";
 
 // Dry-run the app, commit updated lockfile.
 export async function buildPhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
-  if (state.behind === 0) throw new SkipPhase("already up to date");
+  skipIfUpToDate(state);
   await run(sandbox, `cd "${WORKTREE_DIR}" && (pnpm dry-run > /tmp/dry-run.log 2>&1; echo $? > /tmp/dry-run-exit)`, log, {
     timeoutMs: 180_000,
     signal,

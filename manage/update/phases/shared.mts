@@ -28,7 +28,12 @@ export class SkipPhase extends Error {
 // Shared state passed between phases. Each phase writes what later phases
 // depend on (and earlier phases shouldn't need to know about).
 export interface UpdateState {
-  behind?: number;
+  // True iff fetchPhase saw HEAD already at origin/<branch>. Most phases
+  // short-circuit via skipIfUpToDate() when this is set; patch and restart
+  // run regardless because they sync cloud-managed artifacts (MCP config,
+  // skills, bootstrap files) that may have changed in the cloud independent
+  // of the user's repo.
+  upToDate?: boolean;
   pendingEnvs?: Record<string, string>;
   // Set by migratePhase to true iff a real observability migration ran and
   // staged DBs were left in WORKTREE_DIR/.storage. restartPhase reads this to
@@ -45,6 +50,14 @@ export interface PhaseCtx {
 }
 
 export type PhaseFn = (ctx: PhaseCtx) => Promise<void>;
+
+// Common guard: most code-update phases (merge, install, build, apply,
+// migrate) have nothing to do when the sandbox is already on the latest
+// commit. Throwing SkipPhase here lets the driver report it as a clean skip
+// in the UI instead of a no-op success.
+export function skipIfUpToDate(state: UpdateState): void {
+  if (state.upToDate) throw new SkipPhase("already up to date");
+}
 
 export async function ensurePm2Running(sandbox: SandboxInstance, log: LogFn, signal?: AbortSignal) {
   // Delete all first to avoid duplicate processes

@@ -41,10 +41,11 @@ export async function fetchPhase(ctx: PhaseCtx): Promise<void> {
     log,
     { throwOnError: false, signal },
   );
-  state.behind = parseInt(behindResult.stdout.trim(), 10) || 0;
-  if (state.behind === 0) {
+  const behind = parseInt(behindResult.stdout.trim(), 10) || 0;
+  state.upToDate = behind === 0;
+  if (state.upToDate) {
     log("Already up to date.");
   } else {
-    log(`${state.behind} new commit(s) on origin/${branch}.`);
+    log(`${behind} new commit(s) on origin/${branch}.`);
   }
 }
