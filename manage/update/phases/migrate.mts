@@ -83,9 +83,14 @@ export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): P
       .map((f: any) => f.file)
       .join(", ");
     log(`Swapping migrated DBs (${migratedFiles}) into MAIN_DIR/.storage...`);
+    // Wipe stale .wal/.tmp companions in MAIN_DIR before the copy. pm2 was
+    // SIGKILLed (no checkpoint), so MAIN_DIR/.storage still has the legacy
+    // WAL — if we leave it, DuckDB on restart opens the migrated .duckdb
+    // and then replays the old WAL on top, reintroducing legacy writes and
+    // tripping "MIGRATION REQUIRED" again.
     await run(
       sandbox,
-      `mkdir -p ${MAIN_DIR}/.storage && cp -p ${STAGE_DIR}/*.duckdb ${MAIN_DIR}/.storage/`,
+      `mkdir -p ${MAIN_DIR}/.storage && rm -f ${MAIN_DIR}/.storage/*.duckdb.wal ${MAIN_DIR}/.storage/*.duckdb.tmp && cp -p ${STAGE_DIR}/*.duckdb ${MAIN_DIR}/.storage/`,
       log,
       { signal },
     );
