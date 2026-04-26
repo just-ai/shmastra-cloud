@@ -6,10 +6,21 @@ import { MAIN_DIR, WORKTREE_DIR, skipIfUpToDate, type PhaseCtx } from "./shared.
 // Migration runs against COPIES of the .duckdb files staged in the worktree:
 //   - Worktree has fresh node_modules from installPhase (correct @mastra/duckdb).
 //   - Original .duckdb files in MAIN_DIR/.storage stay untouched on failure.
-//   - On success, restartPhase copies the migrated files back to MAIN_DIR
-//     between pm2-stop and pm2-start (atomic swap window).
+//   - On success, restartPhase copies the migrated files back to MAIN_DIR.
 //   - On failure, throw → updater catches → cleanup() in finally wipes the
 //     worktree → MAIN_DIR is untouched → user retries the update.
+//
+// PM2 is killed *before* the snapshot. DuckDB writes go through a WAL file;
+// while pm2 has the .duckdb open, recent writes live only in the WAL and a
+// raw `cp *.duckdb` would silently miss them — the staged copy then looks
+// like an empty DB and the migration script reports "no signal tables, no
+// migration needed", but the live file in MAIN_DIR still contains legacy
+// schema and the post-update server start fails with "MIGRATION REQUIRED".
+// Killing pm2 lets DuckDB checkpoint cleanly, then we glob `*.duckdb*` to
+// pick up any leftover .wal/.tmp companions as a defense-in-depth measure.
+//
+// applyPhase no longer kills pm2 itself — once we're inside migrate, pm2
+// stays down for the rest of the update and restartPhase brings it back up.
 //
 // The migration script itself lives in scripts/sandbox/migration.mts and is
 // uploaded into the worktree just-in-time (same pattern as healer.mts).
@@ -26,10 +37,19 @@ export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): P
   const scriptContent = readFileSync(SCRIPT_LOCAL, "utf-8");
   await sandbox.files.write(SCRIPT_REMOTE, scriptContent, { user: "user" });
 
-  log("Snapshotting .storage/*.duckdb to worktree...");
+  log("Stopping pm2 so DuckDB can flush its WAL before snapshot...");
+  await run(sandbox, "pm2 delete all 2>/dev/null || true", log, { throwOnError: false, signal });
   await run(
     sandbox,
-    `mkdir -p ${STAGE_DIR} && (cp -p ${MAIN_DIR}/.storage/*.duckdb ${STAGE_DIR}/ 2>/dev/null || true)`,
+    "kill -9 $(pgrep -x node) $(pgrep -x pnpm) $(pgrep -x esbuild) 2>/dev/null || true",
+    log,
+    { throwOnError: false, signal },
+  );
+
+  log("Snapshotting .storage/*.duckdb (incl. WAL/tmp companions) to worktree...");
+  await run(
+    sandbox,
+    `mkdir -p ${STAGE_DIR} && (cp -p ${MAIN_DIR}/.storage/*.duckdb* ${STAGE_DIR}/ 2>/dev/null || true)`,
     log,
     { signal },
   );
