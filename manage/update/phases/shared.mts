@@ -35,6 +35,15 @@ export interface UpdateState {
   // of the user's repo.
   upToDate?: boolean;
   pendingEnvs?: Record<string, string>;
+  // Path to a worktree-side backup of MAIN_DIR/.storage/*.duckdb* taken
+  // immediately before migratePhase swapped a migrated DB set into MAIN_DIR.
+  // Set only when a real migration actually ran. updater.mts reads this in
+  // its catch block: if a later phase (apply/patch/restart) fails, we
+  // restore the pre-migration .duckdb files so pm2 doesn't come back up
+  // with new schema + old code (the schema change is destructive — signal
+  // tables are recreated, not just altered — so leaving it in place after
+  // a failed update breaks the running app).
+  observabilityBackupDir?: string;
 }
 
 export interface PhaseCtx {

@@ -33,6 +33,13 @@ const SCRIPT_LOCAL = fileURLToPath(
 );
 const SCRIPT_REMOTE = `${WORKTREE_DIR}/migration.mts`;
 const STAGE_DIR = `${WORKTREE_DIR}/.storage`;
+// Pre-migration .duckdb snapshot — kept aside so updater.mts can roll back
+// MAIN_DIR if a later phase (apply/patch/restart) fails after the migration
+// already swapped new-schema DBs into place. Lives in worktree, so the
+// updater's `finally` cleanup wipes it on success or after a successful
+// restore. Only populated on `state.observabilityBackupDir` when an actual
+// migration ran.
+const BACKUP_DIR = `${WORKTREE_DIR}/.storage-backup`;
 
 export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
   skipIfUpToDate(state);
@@ -82,6 +89,20 @@ export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): P
       .filter((f: any) => f.migrated)
       .map((f: any) => f.file)
       .join(", ");
+
+    // Capture the pre-migration .duckdb set BEFORE the swap. MAIN_DIR still
+    // has the original (legacy-schema) files at this instant. We hand the
+    // path to updater.mts via state so its catch block can roll back if a
+    // later phase fails.
+    log("Backing up pre-migration .duckdb set for rollback...");
+    await run(
+      sandbox,
+      `mkdir -p ${BACKUP_DIR} && cp -p ${MAIN_DIR}/.storage/*.duckdb* ${BACKUP_DIR}/ 2>/dev/null || true`,
+      log,
+      { signal },
+    );
+    state.observabilityBackupDir = BACKUP_DIR;
+
     log(`Swapping migrated DBs (${migratedFiles}) into MAIN_DIR/.storage...`);
     // Wipe ALL .duckdb* files in MAIN_DIR before the copy and bring the
     // full STAGE_DIR set (including any .wal/.tmp companions) over:

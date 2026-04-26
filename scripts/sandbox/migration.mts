@@ -76,6 +76,13 @@ for (const file of entries) {
     // MAIN_DIR — losing every row that lived only in the WAL (in practice
     // most/all of the user's traces and spans, since DuckDB doesn't
     // auto-checkpoint on graceful close).
+    //
+    // NB: `obs.db` is an undocumented field on ObservabilityStorageDuckDB
+    // (the underlying DuckDBConnection). It's not part of the package's
+    // public types — if Mastra makes it private or renames in a future
+    // version, switch to opening a fresh DuckDBConnection at the same
+    // `path` here just for the CHECKPOINT and close it before
+    // `store.close()` below.
     await obs.db.execute("CHECKPOINT");
   } catch (err: any) {
     console.error(JSON.stringify({ error: `${file}: ${err.message}` }));

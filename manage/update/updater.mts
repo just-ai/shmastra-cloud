@@ -1,6 +1,7 @@
 import {
   checkAbort,
   connectSandbox,
+  run,
   AbortError,
   type SandboxInstance,
   type LogFn,
@@ -10,6 +11,7 @@ import {
   SkipPhase,
   ensurePm2Running,
   cleanup,
+  MAIN_DIR,
   type UpdatePhase,
   type PhaseCtx,
   type PhaseStatus,
@@ -87,6 +89,24 @@ export async function updateSandbox(
     // Only flag the phase as errored on an actual error. On stop, leave the
     // phase in "running" and let the UI color by the overall "stopped" status.
     if (currentPhase && !stopped) onPhase(currentPhase, "error");
+    // If migratePhase swapped a new-schema .duckdb set into MAIN_DIR before
+    // the failure, roll it back. Without this, ensurePm2Running below would
+    // start pm2 on the OLD code (apply hadn't completed) against the NEW
+    // schema — signal-table migrations are destructive (DROP/RECREATE), so
+    // old code can't talk to new tables.
+    if (ctx.state.observabilityBackupDir) {
+      try {
+        log("Rolling back .duckdb to pre-migration state...");
+        await run(
+          sandbox,
+          `rm -f ${MAIN_DIR}/.storage/*.duckdb* && cp -p ${ctx.state.observabilityBackupDir}/*.duckdb* ${MAIN_DIR}/.storage/`,
+          log,
+          { throwOnError: false },
+        );
+      } catch (restoreErr: any) {
+        log(`✗ Rollback failed: ${restoreErr.message}`);
+      }
+    }
     // On error, also try to revive pm2 so the user isn't left with a dead
     // sandbox while we figure out what went wrong. Worktree cleanup happens
     // in `finally` regardless of success/failure.
