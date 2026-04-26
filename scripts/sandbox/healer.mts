@@ -1,5 +1,5 @@
 import { createRequire } from "module";
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import { statSync, readFileSync, writeFileSync } from "fs";
 import * as os from "os";
 
@@ -172,16 +172,19 @@ Server log file (stdout + stderr combined):
 - .logs/shmastra.log
 
 Your job:
-1. Read logs tail to understand what went wrong.
-2. If the latest log entries show the server is running normally with no errors (e.g. "Ready in", successful requests, normal startup messages), do nothing — just call restart_shmastra to confirm health and stop.
-3. Inspect relevant source files to find the root cause.
-4. Fix the code — make minimal, targeted changes.
-4. Use the restart_shmastra tool to restart the server — it will wait for the process to settle and return the actual status.
-5. If the status is not "online", read the new logs and try a different fix.
-6. Once the server is online, commit your changes: git add -A && git commit -m "<short description of what you fixed>"
+1. Read logs tail to understand what went wrong. You need only entries after the latest "Starting Mastra dev server" line in the log. Previous entries don't matter.
+2. If the latest log entries show the server is running normally with no errors (e.g. "Ready in", successful requests, normal startup messages), do nothing and finish.
+3. If the latest log entries show that server is starting but not ready yet - just wait for 10-15s and read logs again. If it's still starting - inspect and fix. Sometimes simple restarting helps.
+4. Inspect relevant source files to find the root cause.
+5. Fix the code — make minimal, targeted changes.
+6. Use the restart_shmastra tool to restart the server — it will wait for the process to settle and return the actual status.
+7. If the status is not "online", read the new logs and try a different fix.
+8. Once the server is online, commit your changes: git add -A && git commit -m "<short description of what you fixed>"
 
 Rules:
+- If server responds normally on port 4111 - do nothing and finish immediatelly.
 - NEVER ask questions or request clarification. Always take action.
+- NEVER inspect healer.log - it's your own log file.
 - Make minimal fixes only. Do not refactor or add features.
 - If the error is in user code, fix it.
 - Do not edit sources inside src/shmastra - it is internal framework.
@@ -523,6 +526,54 @@ function watchResourcePressure(busy: { value: boolean }): void {
   log("Watching for resource pressure (memory/cpu)...");
 }
 
+// ── Hibernation wake watcher ──
+// E2B pauses the sandbox after idle. On resume, Node keeps stale TCP sockets
+// open (peer side is long dead) and the next fetch hangs indefinitely. We
+// detect the wake by watching setInterval drift — if the gap between two
+// ticks is much larger than expected, the process just unfroze — then kill
+// every established TCP socket so Node is forced to reconnect.
+
+const WAKE_CHECK_MS = 100;
+const WAKE_GAP_THRESHOLD_MS = 15_000;
+
+// Kill established TCP sockets, but preserve:
+// - SSH (port 22) — E2B uses it to manage the sandbox
+// - loopback (pm2 god ↔ workers, localhost:4111, envd, etc.)
+// What gets killed: outbound HTTPS/HTTP to the gateway and any other
+// remote peer connections that went stale during hibernation.
+// Filter is passed as argv to avoid shell parsing the parentheses.
+// ss accepts `!=` on ports but not on `dst` — negate the whole excluded group instead.
+// SOCK_DESTROY needs CAP_NET_ADMIN, so we run ss via passwordless sudo.
+const SS_KILL_ARGS = "-n ss --kill state established not ( dport = :22 or sport = :22 or dst = 127.0.0.0/8 or dst = [::1] )".split(" ");
+
+function dropStaleConnections(): void {
+  try {
+    execFileSync("sudo", SS_KILL_ARGS, { timeout: 5_000, stdio: "pipe" });
+    log("Dropped stale remote TCP sockets (ss --kill).");
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`ss --kill failed: ${message}`);
+  }
+}
+
+function watchSandboxWake(busy: { value: boolean }): void {
+  let lastTick = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    const gap = now - lastTick;
+    lastTick = now;
+    if (gap < WAKE_GAP_THRESHOLD_MS) return;
+    const seconds = Math.round(gap / 1000);
+    log(`Sandbox wake detected (tick gap ${seconds}s).`);
+    if (busy.value) {
+      log("Busy — skipping connection drop.");
+      return;
+    }
+    dropStaleConnections();
+  }, WAKE_CHECK_MS);
+  log("Watching for sandbox wake-up...");
+}
+
 async function reportReadyWhenHealthy(): Promise<void> {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
@@ -556,6 +607,9 @@ pm2.connect((err: Error | null) => {
 
   // ── Resource pressure watcher ──
   watchResourcePressure(busy);
+
+  // ── Hibernation wake watcher ──
+  watchSandboxWake(busy);
 
   // ── Health check polling ──
   // If health fails twice with a 10s gap, and pm2 says process is online → heal

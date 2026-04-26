@@ -8,12 +8,16 @@ import {
   updateSandbox,
 } from "./db";
 import { getVirtualKey } from "./virtual-keys";
+import { writeMcpConfig } from "./mcp-config";
+import { writeSkills } from "./skill-injection";
+import { MASTRA_API_PREFIX } from "./mastra-constants";
+import { getAppUrl } from "./app-url";
 
 const TEMPLATE = "shmastra";
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const APP_PORT = 4111;
 const PROBE_TIMEOUT_MS = 3000;
-const READY_ENDPOINT = "/api/auth/me";
+const READY_ENDPOINT = "/health";
 const STARTUP_TIMEOUT_MS = 180 * 1000;
 const STARTUP_POLL_INTERVAL_MS = 3000;
 
@@ -102,9 +106,7 @@ async function ensureSandboxAppRunning(sandbox: Sandbox) {
 }
 
 async function provisionSandbox(userId: string) {
-  const domain = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL ?? "localhost:3000";
-  const protocol = domain.startsWith("localhost") ? "http" : "https";
-  const appUrl = `${protocol}://${domain}`;
+  const appUrl = getAppUrl();
 
   try {
     const user = await getUserById(userId);
@@ -119,7 +121,7 @@ async function provisionSandbox(userId: string) {
       },
       envs: {
         MASTRA_STUDIO_BASE_PATH: "/studio",
-        MASTRA_API_PREFIX: "/api/mastra",
+        MASTRA_API_PREFIX,
         MASTRA_AUTH_TOKEN: virtualKey,
         CORS_ORIGIN: appUrl,
         USER_ID: userId,
@@ -133,8 +135,10 @@ async function provisionSandbox(userId: string) {
         OPENAI_BASE_URL: `${appUrl}/api/gateway/openai`,
         ANTHROPIC_BASE_URL: `${appUrl}/api/gateway/anthropic`,
         GEMINI_BASE_URL: `${appUrl}/api/gateway/gemini`,
+        GOOGLE_BASE_URL: `${appUrl}/api/gateway/gemini`,
         GOOGLE_GEMINI_BASE_URL: `${appUrl}/api/gateway/gemini`,
         GOOGLE_GENERATIVE_BASE_URL: `${appUrl}/api/gateway/gemini`,
+        GOOGLE_GENERATIVE_AI_BASE_URL: `${appUrl}/api/gateway/gemini`,
       },
     });
 
@@ -154,6 +158,18 @@ async function provisionSandbox(userId: string) {
     });
 
     const sandboxHost = await ensureSandboxAppRunning(sandbox);
+
+    try {
+      await writeMcpConfig(sandbox, appUrl, virtualKey);
+    } catch (err) {
+      console.error(`Failed to write MCP config for sandbox ${sandbox.sandboxId}:`, err);
+    }
+
+    try {
+      await writeSkills(sandbox);
+    } catch (err) {
+      console.error(`Failed to write skills for sandbox ${sandbox.sandboxId}:`, err);
+    }
 
     await updateSandbox(userId, {
       sandbox_host: sandboxHost,

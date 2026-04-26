@@ -9,8 +9,12 @@ const BOOTSTRAP_FILES: Array<{ local: string; remote: string; executable?: boole
   { local: "../../../scripts/sandbox/start.sh", remote: "/home/user/start.sh", executable: true },
 ];
 
-// Upload latest sandbox-side bootstrap files, then start shmastra + healer via pm2.
-export async function restartPhase({ sandbox, log, signal, pendingEnvs }: PhaseCtx): Promise<void> {
+// Upload latest sandbox-side bootstrap files, then start shmastra + healer
+// via pm2. pm2 has been down since migratePhase — apply and patch ran while
+// it was off — so this is the single bring-up on new code at the end of the
+// pipeline.
+export async function restartPhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
+  const pendingEnvs = state.pendingEnvs;
   for (const { local, remote, executable } of BOOTSTRAP_FILES) {
     const localPath = fileURLToPath(new URL(local, import.meta.url));
     const content = readFileSync(localPath, "utf-8");

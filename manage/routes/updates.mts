@@ -53,13 +53,14 @@ export function handleUpdateOne(req: Request, res: Response) {
   const ac = new AbortController();
   runningUpdates.set(sandboxId, ac);
   broadcast("status", { sandboxId, status: "running" });
-  updateSandbox(
-    sandboxId,
-    makeSandboxLog(sandboxId),
-    (status) => broadcast("status", { sandboxId, status }),
-    ac.signal,
-    (phase) => { currentPhases.set(sandboxId, phase); broadcast("phase", { sandboxId, phase }); },
-  )
+  updateSandbox(sandboxId, makeSandboxLog(sandboxId), {
+    onStatus: (status) => broadcast("status", { sandboxId, status }),
+    signal: ac.signal,
+    onPhase: (phase, status) => {
+      if (status === "running") currentPhases.set(sandboxId, phase);
+      broadcast("phase", { sandboxId, phase, status });
+    },
+  })
     .catch((err: any) => {
       // Safety net: updater should broadcast a terminal status itself, but if it threw
       // past its own handlers we'd otherwise leave the UI stuck on "running".
@@ -98,13 +99,14 @@ export function handleUpdateAll(_req: Request, res: Response) {
         runningUpdates.set(id, ac);
         broadcast("status", { sandboxId: id, status: "running" });
         try {
-          await updateSandbox(
-            id,
-            makeSandboxLog(id),
-            (status) => broadcast("status", { sandboxId: id, status }),
-            ac.signal,
-            (phase) => { currentPhases.set(id, phase); broadcast("phase", { sandboxId: id, phase }); },
-          );
+          await updateSandbox(id, makeSandboxLog(id), {
+            onStatus: (status) => broadcast("status", { sandboxId: id, status }),
+            signal: ac.signal,
+            onPhase: (phase, status) => {
+              if (status === "running") currentPhases.set(id, phase);
+              broadcast("phase", { sandboxId: id, phase, status });
+            },
+          });
         } catch (err: any) {
           // Safety net — see handleUpdateOne.
           broadcast("log", { sandboxId: id, message: `✗ Update crashed: ${err?.message ?? err}`, phase: null });

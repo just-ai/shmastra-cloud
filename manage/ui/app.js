@@ -9,6 +9,9 @@ export function App() {
   const [sandboxes, setSandboxes] = useState([]);
   const [statuses, setStatuses] = useState({});
   const [phases, setPhases] = useState({});
+  // Per-sandbox map of phase name → PhaseStatus ("running" | "done" | "skipped" | "error").
+  // Drives the phase bar coloring independently of log content.
+  const [phaseStates, setPhaseStates] = useState({});
   const [logs, setLogs] = useState({});
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -78,8 +81,14 @@ export function App() {
       setStatuses((prev) => ({ ...prev, [sandboxId]: status }));
     });
     es.addEventListener("phase", (e) => {
-      const { sandboxId, phase } = JSON.parse(e.data);
-      setPhases((prev) => ({ ...prev, [sandboxId]: phase }));
+      const { sandboxId, phase, status } = JSON.parse(e.data);
+      setPhaseStates((prev) => ({
+        ...prev,
+        [sandboxId]: { ...(prev[sandboxId] || {}), [phase]: status },
+      }));
+      if (status === "running") {
+        setPhases((prev) => ({ ...prev, [sandboxId]: phase }));
+      }
     });
     return () => es.close();
   }, []);
@@ -153,6 +162,7 @@ export function App() {
 
   const updateOne = useCallback((id) => {
     setLogs((prev) => ({ ...prev, [id]: [] }));
+    setPhaseStates((prev) => ({ ...prev, [id]: {} }));
     fetch(`${API}/api/update/${id}`, { method: "POST" });
   }, []);
 
@@ -403,7 +413,7 @@ export function App() {
   const selectedChat = selected ? chatMessages[selected] || [] : [];
   const currentTab = selected ? getTab(selected) : "chat";
   const logPhaseSet = new Set(selectedLogs.map(l => l.phase).filter(Boolean));
-  const lastLogPhase = selectedLogs.length ? [...selectedLogs].reverse().find(l => l.phase)?.phase : null;
+  const selectedPhaseStates = selected ? phaseStates[selected] || {} : {};
 
   // ── Render ──
 
@@ -433,7 +443,7 @@ export function App() {
       currentTab, setTab: (t) => setTab((prev) => ({ ...prev, [selected]: t })),
       getStatus, phases,
       logs: selectedLogs, logContainerRef,
-      logPhaseSet, lastLogPhase, hoveredPhase, setHoveredPhase, activePhase, setActivePhase,
+      logPhaseSet, phaseStates: selectedPhaseStates, hoveredPhase, setHoveredPhase, activePhase, setActivePhase,
       pm2Logs, pm2Process, setPm2Process, pm2Loading, pm2Auto, setPm2Auto, fetchPm2Logs, pm2LogRef,
       chatMessages: selectedChat, chatStreaming, chatInput, setChatInput, cmdMode, setCmdMode, sendChat, stopChat, expandedTools, setExpandedTools, inputRef,
       onClose: () => setSelected(null),

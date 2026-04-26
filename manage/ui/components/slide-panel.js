@@ -8,6 +8,7 @@ import { ChatTab } from "./chat-tab.js";
 import { FilesTab } from "./files-tab.js";
 import { StatsTab } from "./stats-tab.js";
 import { TraceTab } from "./trace-tab.js";
+import { TasksTab } from "./tasks-tab.js";
 
 export function SlidePanel({
   selected, selectedEntry, panelWidth, setPanelWidth,
@@ -17,7 +18,7 @@ export function SlidePanel({
   // Update logs
   logs, logContainerRef,
   // Phase bar
-  logPhaseSet, lastLogPhase, hoveredPhase, setHoveredPhase, activePhase, setActivePhase,
+  logPhaseSet, phaseStates, hoveredPhase, setHoveredPhase, activePhase, setActivePhase,
   // PM2 logs
   pm2Logs, pm2Process, setPm2Process, pm2Loading, pm2Auto, setPm2Auto, fetchPm2Logs, pm2LogRef,
   // Chat
@@ -130,7 +131,7 @@ export function SlidePanel({
 
     // Phase bar (Update tab only)
     currentTab === "logs" && h(PhaseBar, {
-      logPhaseSet, lastLogPhase, status: getStatus(selected),
+      logPhaseSet, phaseStates, status: getStatus(selected),
       hoveredPhase, setHoveredPhase, activePhase, setActivePhase, scrollToPhase,
     }),
 
@@ -156,6 +157,9 @@ export function SlidePanel({
 
     // Trace tab (observability)
     currentTab === "trace" && h(TraceTab, { sandboxId: selected }),
+
+    // Tasks tab (schedules + runs)
+    currentTab === "tasks" && h(TasksTab, { sandboxId: selected }),
 
     // Chat tab
     currentTab === "chat" && h(ChatTab, {

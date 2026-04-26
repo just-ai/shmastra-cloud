@@ -94,13 +94,13 @@ async function readDaemonEnvs(sandbox: SandboxInstance): Promise<Record<string, 
 async function enrichSandbox(sandbox: SandboxInstance): Promise<void> {
   const envs = await readDaemonEnvs(sandbox);
 
-  const origRun = sandbox.commands.run.bind(sandbox.commands);
+  const origRun = sandbox.commands.run.bind(sandbox.commands) as typeof sandbox.commands.run;
   sandbox.commands.run = ((cmd: string, opts?: any) =>
     origRun(cmd, {
       user: "user",
       ...opts,
       envs: { ...envs, ...(opts?.envs || {}) },
-    })) as any;
+    })) as typeof sandbox.commands.run;
 
   // files.* methods take opts as the last arg. Default user:"user"; a plain
   // opts object in the caller's args wins on conflict.
@@ -128,6 +128,33 @@ export async function connectSandbox(
   return sandbox;
 }
 
+// Line-buffered emitter: accumulates partial chunks and logs on newline, so
+// mid-line splits from E2B streaming don't produce mangled output.
+function makeLineEmitter(log: LogFn, prefix: string): {
+  push: (chunk: string) => void;
+  flush: () => void;
+} {
+  let partial = "";
+  return {
+    push(chunk: string) {
+      partial += chunk;
+      const lines = partial.split("\n");
+      partial = lines.pop() ?? "";
+      for (const line of lines) {
+        const l = line.replace(/\r$/, "");
+        if (l) log(`${prefix}${l}`);
+      }
+    },
+    flush() {
+      if (partial) {
+        const l = partial.replace(/\r$/, "");
+        if (l) log(`${prefix}${l}`);
+        partial = "";
+      }
+    },
+  };
+}
+
 export async function run(
   sandbox: SandboxInstance,
   cmd: string,
@@ -141,11 +168,21 @@ export async function run(
 ) {
   checkAbort(signal);
   log(`$ ${cmd}`);
+
+  const out = makeLineEmitter(log, "  ");
+  const err = makeLineEmitter(log, "  ");
+
   // Run in background so we can SIGKILL the process on abort. E2B's
   // commands.run in foreground mode ignores AbortSignal entirely — without
   // this, "stop" only takes effect between commands, leaving long-running
   // ones (pnpm install, dry-run) pinning the phase for minutes.
-  const handle = await sandbox.commands.run(cmd, { timeoutMs, background: true, envs });
+  const handle = await sandbox.commands.run(cmd, {
+    timeoutMs,
+    background: true,
+    envs,
+    onStdout: (d: string) => out.push(d),
+    onStderr: (d: string) => err.push(d),
+  });
 
   let aborted = false;
   const onAbort = () => {
@@ -157,21 +194,26 @@ export async function run(
   let result: { stdout: string; stderr: string; exitCode: number };
   try {
     result = await handle.wait();
-  } catch (err) {
-    if (aborted) throw new AbortError();
-    if (err instanceof CommandExitError) {
-      result = { stdout: err.stdout, stderr: err.stderr, exitCode: err.exitCode };
+  } catch (e) {
+    if (aborted) {
+      out.flush(); err.flush();
+      throw new AbortError();
+    }
+    if (e instanceof CommandExitError) {
+      result = { stdout: e.stdout, stderr: e.stderr, exitCode: e.exitCode };
     } else {
-      throw err;
+      out.flush(); err.flush();
+      throw e;
     }
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }
 
+  out.flush();
+  err.flush();
+
   if (aborted) throw new AbortError();
 
-  if (result.stdout.trim()) log(`  stdout: ${result.stdout.trim()}`);
-  if (result.stderr.trim()) log(`  stderr: ${result.stderr.trim()}`);
   if (result.exitCode !== 0) {
     log(`  ⚠ exit code: ${result.exitCode}`);
     if (throwOnError) {

@@ -1,7 +1,10 @@
+import { createRequire } from "node:module";
 import type { Request, Response } from "express";
 import { MastraClient } from "@mastra/client-js";
 import { Sandbox } from "e2b";
 import { supabase } from "../env.mjs";
+
+const { MASTRA_API_PREFIX } = createRequire(import.meta.url)("@/lib/mastra-constants") as typeof import("@/lib/mastra-constants");
 
 interface SandboxRow {
   sandbox_id: string;
@@ -27,7 +30,7 @@ async function makeClient(sandboxId: string) {
   const baseUrl = host.startsWith("http") ? host : `https://${host}`;
   return new MastraClient({
     baseUrl,
-    apiPrefix: "/api/mastra",
+    apiPrefix: MASTRA_API_PREFIX,
     headers: { Authorization: `Bearer ${virtualKey}` },
     retries: 0,
   });

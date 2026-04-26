@@ -2,17 +2,18 @@ import { defineConfig } from "vite";
 import { readFileSync, writeFileSync, cpSync, existsSync } from "fs";
 import { resolve } from "path";
 import { config } from "dotenv";
+import { MASTRA_API_PREFIX } from "../lib/mastra-constants";
 
 // Load local overrides first, then fall back to .env defaults.
 config({ path: resolve(__dirname, "../.env.local") });
 config({ path: resolve(__dirname, "../.env") });
 
-// Build-time defaults for MASTRA_* variables (same as next.config.ts env)
+// Build-time defaults for MASTRA_* variables (same as next.config.ts env).
 const mastraDefaults = {
   MASTRA_SERVER_HOST: "__SANDBOX_HOST__",
   MASTRA_SERVER_PORT: "443",
   MASTRA_SERVER_PROTOCOL: "https",
-  MASTRA_API_PREFIX: "/api/mastra",
+  MASTRA_API_PREFIX,
   MASTRA_STUDIO_BASE_PATH: "/studio",
   MASTRA_AUTO_DETECT_URL: "false",
   MASTRA_TELEMETRY_DISABLED: "true",
@@ -32,12 +33,16 @@ const keepaliveSrc = resolve(__dirname, "keepalive.js");
 const keepaliveDest = resolve(studioDest, "keepalive.js");
 const logoutButtonSrc = resolve(__dirname, "logout-button.js");
 const logoutButtonDest = resolve(studioDest, "logout-button.js");
+const schedulesButtonSrc = resolve(__dirname, "schedules-button.js");
+const schedulesButtonDest = resolve(studioDest, "schedules-button.js");
 const shmastraScriptTag =
   '<script src="/shmastra/public/script/shmastra.js"></script>';
 const keepaliveScriptTag =
   '<script src="/studio/keepalive.js" defer></script>';
 const logoutButtonScriptTag =
   '<script src="/studio/logout-button.js" defer></script>';
+const schedulesButtonScriptTag =
+  '<script src="/studio/schedules-button.js" defer></script>';
 
 export default defineConfig({
   plugins: [
@@ -55,6 +60,7 @@ export default defineConfig({
         cpSync(studioSrc, studioDest, { recursive: true });
         cpSync(keepaliveSrc, keepaliveDest);
         cpSync(logoutButtonSrc, logoutButtonDest);
+        cpSync(schedulesButtonSrc, schedulesButtonDest);
 
         // Replace %%PLACEHOLDER%% patterns in index.html
         const indexPath = resolve(studioDest, "index.html");
@@ -118,6 +124,12 @@ export default defineConfig({
             html = html.includes("</body>")
               ? html.replace("</body>", `  ${logoutButtonScriptTag}\n</body>`)
               : `${html}\n${logoutButtonScriptTag}\n`;
+          }
+
+          if (!html.includes(schedulesButtonScriptTag)) {
+            html = html.includes("</body>")
+              ? html.replace("</body>", `  ${schedulesButtonScriptTag}\n</body>`)
+              : `${html}\n${schedulesButtonScriptTag}\n`;
           }
 
           writeFileSync(indexPath, html);

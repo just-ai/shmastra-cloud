@@ -1,19 +1,25 @@
 import { createElement as h } from "react";
 
-export const PHASES = ["fetch", "merge", "install", "build", "apply", "patch", "restart"];
+export const PHASES = ["fetch", "merge", "install", "build", "migrate", "apply", "patch", "restart"];
 
-function phaseColor(p, logPhaseSet, lastLogPhase, status) {
-  if (!logPhaseSet.has(p)) return "var(--bg-3)";
-  if (p === lastLogPhase) {
-    if (status === "running") return "var(--blue)";
-    if (status === "error") return "var(--red)";
-    if (status === "stopped") return "var(--yellow)";
+// Map explicit phase state (from `phase` SSE events) to a bar color. A phase
+// with no state entry hasn't been reached yet; a skipped phase is reached but
+// muted so the user can see it was intentionally not run.
+function phaseColor(phaseState, overallStatus) {
+  if (!phaseState) return "var(--bg-3)";
+  if (phaseState === "skipped") return "var(--text-3)";
+  if (phaseState === "running") {
+    if (overallStatus === "error") return "var(--red)";
+    if (overallStatus === "stopped") return "var(--yellow)";
+    return "var(--blue)";
   }
+  if (phaseState === "error") return "var(--red)";
   return "var(--green)";
 }
 
-export function PhaseBar({ logPhaseSet, lastLogPhase, status, hoveredPhase, setHoveredPhase, activePhase, setActivePhase, scrollToPhase }) {
-  if (logPhaseSet.size === 0) return null;
+export function PhaseBar({ logPhaseSet, phaseStates, status, hoveredPhase, setHoveredPhase, activePhase, setActivePhase, scrollToPhase }) {
+  const states = phaseStates || {};
+  if (Object.keys(states).length === 0) return null;
   const highlightPhase = activePhase || hoveredPhase;
 
   return h("div", {
@@ -21,34 +27,36 @@ export function PhaseBar({ logPhaseSet, lastLogPhase, status, hoveredPhase, setH
   },
     h("div", { style: { display: "flex", gap: "2px" } },
       ...PHASES.map((p) => {
-        const has = logPhaseSet.has(p);
-        const isLast = p === lastLogPhase && status === "running";
-        const color = phaseColor(p, logPhaseSet, lastLogPhase, status);
+        const phaseState = states[p];
+        const hasLogs = logPhaseSet.has(p);
+        const clickable = hasLogs;
+        const isRunning = phaseState === "running" && status === "running";
+        const color = phaseColor(phaseState, status);
         return h("div", {
           key: p,
           style: {
-            flex: 1, cursor: has ? "pointer" : "default",
+            flex: 1, cursor: clickable ? "pointer" : "default",
             padding: "2px 0 4px",
             opacity: highlightPhase && highlightPhase !== p ? 0.4 : 1,
             transition: "opacity 0.2s",
           },
-          onMouseEnter: has ? () => setHoveredPhase(p) : undefined,
+          onMouseEnter: clickable ? () => setHoveredPhase(p) : undefined,
           onMouseLeave: () => setHoveredPhase(null),
-          onClick: has ? () => { setActivePhase(activePhase === p ? null : p); scrollToPhase(p); } : undefined,
+          onClick: clickable ? () => { setActivePhase(activePhase === p ? null : p); scrollToPhase(p); } : undefined,
         },
           h("div", {
             style: {
               height: "3px", borderRadius: "1.5px",
               background: color,
               transition: "all 0.2s",
-              ...(isLast ? { animation: "pulse 2s ease-in-out infinite" } : {}),
+              ...(isRunning ? { animation: "pulse 2s ease-in-out infinite" } : {}),
             },
           }),
           h("div", {
             className: "mono",
             style: {
               textAlign: "center", fontSize: "10px", marginTop: "4px",
-              color: highlightPhase === p ? "var(--text-0)" : has ? color : "var(--text-3)",
+              color: highlightPhase === p ? "var(--text-0)" : phaseState ? color : "var(--text-3)",
               fontWeight: highlightPhase === p ? 600 : 400,
               transition: "color 0.2s",
             },

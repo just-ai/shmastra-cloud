@@ -10,6 +10,7 @@ import { handleLogs } from "./routes/logs.mjs";
 import { handleStats, handleStatsDirs, handleStatsErrors, handleStatsFds } from "./routes/stats.mjs";
 import { handleMastraStats, handleObservability, handleTraceDetail } from "./routes/mastra-stats.mjs";
 import { handleFilesList, handleFilesRead, handleFilesDownload, handleFilesWrite, handleFilesMkdir, handleFilesDelete, handleFilesRename } from "./routes/files.mjs";
+import { handleListTasks, handleListTaskRuns } from "./routes/tasks.mjs";
 import { currentProfile, availableProfiles, loadedFiles, switchProfile } from "./env.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -73,6 +74,10 @@ export function startServer(port: number) {
   app.post("/api/files/:sandboxId/mkdir", handleFilesMkdir);
   app.post("/api/files/:sandboxId/delete", handleFilesDelete);
   app.post("/api/files/:sandboxId/rename", handleFilesRename);
+
+  // ── Tasks (schedules) ──
+  app.get("/api/tasks/:sandboxId", handleListTasks);
+  app.get("/api/tasks/:sandboxId/:scheduleId/runs", handleListTaskRuns);
 
   // ── Env profile ──
   app.get("/api/env", (_req, res) => {
