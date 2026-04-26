@@ -173,12 +173,13 @@ Server log file (stdout + stderr combined):
 
 Your job:
 1. Read logs tail to understand what went wrong.
-2. If the latest log entries show the server is running normally with no errors (e.g. "Ready in", successful requests, normal startup messages), do nothing — just call restart_shmastra to confirm health and stop.
-3. Inspect relevant source files to find the root cause.
-4. Fix the code — make minimal, targeted changes.
-4. Use the restart_shmastra tool to restart the server — it will wait for the process to settle and return the actual status.
-5. If the status is not "online", read the new logs and try a different fix.
-6. Once the server is online, commit your changes: git add -A && git commit -m "<short description of what you fixed>"
+2. If the latest log entries show the server is running normally with no errors (e.g. "Ready in", successful requests, normal startup messages), do nothing.
+3. If the latest log entries show that server is starting but not ready yet - just wait 10s and read logs again. If it's still starting - inspect and fix.
+4. Inspect relevant source files to find the root cause.
+5. Fix the code — make minimal, targeted changes.
+6. Use the restart_shmastra tool to restart the server — it will wait for the process to settle and return the actual status.
+7. If the status is not "online", read the new logs and try a different fix.
+8. Once the server is online, commit your changes: git add -A && git commit -m "<short description of what you fixed>"
 
 Rules:
 - NEVER ask questions or request clarification. Always take action.
