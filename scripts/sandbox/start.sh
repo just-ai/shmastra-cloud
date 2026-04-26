@@ -20,7 +20,4 @@ pm2 set pm2-logrotate:max_size 5M
 pm2 set pm2-logrotate:retain 5
 pm2 set pm2-logrotate:compress true
 
-# Save process list so pm2 resurrect works after daemon restart
-pm2 save
-
 echo "Shmastra server is starting"

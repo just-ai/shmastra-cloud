@@ -29,6 +29,7 @@ export {
   SkipPhase,
   ensurePm2Running,
   cleanup,
+  MAIN_DIR,
   type PhaseStatus,
   type PhaseCtx,
   type PhaseFn,
