@@ -1,38 +1,69 @@
-import { run, AbortError } from "../../sandbox.mjs";
-import { MAIN_DIR, SkipPhase, type PhaseCtx } from "./shared.mjs";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { run } from "../../sandbox.mjs";
+import { MAIN_DIR, WORKTREE_DIR, SkipPhase, type PhaseCtx } from "./shared.mjs";
 
-const BACKUP_DIR = "$HOME/.backup";
+// Migration runs against COPIES of the .duckdb files staged in the worktree:
+//   - Worktree has fresh node_modules from installPhase (correct @mastra/duckdb).
+//   - Original .duckdb files in MAIN_DIR/.storage stay untouched on failure.
+//   - On success, restartPhase copies the migrated files back to MAIN_DIR
+//     between pm2-stop and pm2-start (atomic swap window).
+//   - On failure, throw → updater catches → cleanup() in finally wipes the
+//     worktree → MAIN_DIR is untouched → user retries the update.
+//
+// The migration script itself lives in scripts/sandbox/migration.mts and is
+// uploaded into the worktree just-in-time (same pattern as healer.mts).
 
-// Back up the sandbox's local SQLite dbs (.storage is gitignored) and run
-// `mastra migrate` against the new schema. On failure, restore the backup
-// so the phase failure in updater.mts leaves the sandbox in a runnable state.
+const SCRIPT_LOCAL = fileURLToPath(
+  new URL("../../../scripts/sandbox/migration.mts", import.meta.url),
+);
+const SCRIPT_REMOTE = `${WORKTREE_DIR}/migration.mts`;
+const STAGE_DIR = `${WORKTREE_DIR}/.storage`;
+
 export async function migratePhase({ sandbox, log, signal, state }: PhaseCtx): Promise<void> {
   if (state.behind === 0) throw new SkipPhase("already up to date");
-  log("Backing up .storage → ~/.backup ...");
+
+  const scriptContent = readFileSync(SCRIPT_LOCAL, "utf-8");
+  await sandbox.files.write(SCRIPT_REMOTE, scriptContent, { user: "user" });
+
+  log("Snapshotting .storage/*.duckdb to worktree...");
   await run(
     sandbox,
-    `if [ -d "${MAIN_DIR}/.storage" ]; then rm -rf "${BACKUP_DIR}" && cp -r "${MAIN_DIR}/.storage" "${BACKUP_DIR}"; else echo "no .storage to back up"; fi`,
+    `mkdir -p ${STAGE_DIR} && (cp -p ${MAIN_DIR}/.storage/*.duckdb ${STAGE_DIR}/ 2>/dev/null || true)`,
     log,
-    { throwOnError: false, signal },
+    { signal },
   );
 
-  log("Running mastra migrate...");
-  try {
-    await run(sandbox, `cd "${MAIN_DIR}" && npx mastra migrate -y`, log, {
-      timeoutMs: 180_000,
-      signal,
-    });
-  } catch (err) {
-    if (err instanceof AbortError) throw err;
-    log("✗ Migration failed, restoring .storage from ~/.backup ...");
-    await run(
-      sandbox,
-      `if [ -d "${BACKUP_DIR}" ]; then rm -rf "${MAIN_DIR}/.storage" && mv "${BACKUP_DIR}" "${MAIN_DIR}/.storage"; else echo "no backup to restore"; fi`,
-      log,
-      { throwOnError: false },
-    );
-    throw err;
+  log("Running observability migration in worktree...");
+  const result = await run(
+    sandbox,
+    `cd ${WORKTREE_DIR} && node --experimental-strip-types migration.mts ${STAGE_DIR}`,
+    log,
+    { timeoutMs: 120_000, throwOnError: false, signal },
+  );
+
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim();
+    throw new Error(`Observability migration failed: ${detail}`);
   }
 
-  await run(sandbox, `rm -rf "${BACKUP_DIR}"`, log, { throwOnError: false, signal });
+  let outcome: { migrated: boolean; files?: any[]; reason?: string };
+  try {
+    outcome = JSON.parse(result.stdout.trim());
+  } catch (err: any) {
+    throw new Error(`Migration script produced invalid JSON: ${err.message}\n${result.stdout}`);
+  }
+
+  if (outcome.migrated) {
+    const migratedFiles = (outcome.files ?? [])
+      .filter((f: any) => f.migrated)
+      .map((f: any) => f.file)
+      .join(", ");
+    log(`✓ Migration applied — staged DBs (${migratedFiles}) will be swapped in restart phase`);
+  } else {
+    log(`✓ Migration not needed (${outcome.reason ?? "all files already migrated"})`);
+    // Drop the stale snapshot so restartPhase doesn't see the staging dir and
+    // accidentally swap an outdated copy onto MAIN_DIR.
+    await run(sandbox, `rm -rf ${STAGE_DIR}`, log, { throwOnError: false, signal });
+  }
 }

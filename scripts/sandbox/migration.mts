@@ -1,0 +1,76 @@
+// Run observability migrations on every .duckdb file in <storage-dir>.
+//
+// Mastra's `mastra migrate` CLI bundles the entire user project just to call
+// `observabilityStore.migrateSpans()` on the configured DuckDB store — that
+// bundle+spawn dance is ~30s per update and dominates the migrate phase.
+// This script does the same call directly against each .duckdb file in a
+// directory, using the public DuckDBStore API exported from the package, and
+// completes in a few seconds.
+//
+// Output: single JSON line on stdout with shape
+//   { migrated: boolean, files: [{ file, migrated, message?, reason? }, ...] }
+// Exit codes: 0 on success (regardless of whether any migration ran), 2 on
+// unexpected failure (caller should abort the update).
+//
+// Run with: node --experimental-strip-types migration.mts <storage-dir>
+
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
+
+const dir = process.argv[2];
+if (!dir) {
+  console.error(JSON.stringify({ error: "usage: node migration.mts <storage-dir>" }));
+  process.exit(2);
+}
+
+let DuckDBStore: any;
+try {
+  ({ DuckDBStore } = await import("@mastra/duckdb"));
+} catch {
+  // No @mastra/duckdb installed in node_modules. Means the user's project
+  // doesn't ship DuckDB observability — nothing to migrate.
+  console.log(JSON.stringify({ migrated: false, reason: "no @mastra/duckdb installed" }));
+  process.exit(0);
+}
+
+let entries: string[];
+try {
+  entries = readdirSync(dir).filter((f) => f.endsWith(".duckdb"));
+} catch (err: any) {
+  console.error(JSON.stringify({ error: `cannot list ${dir}: ${err.message}` }));
+  process.exit(2);
+}
+
+if (entries.length === 0) {
+  console.log(JSON.stringify({ migrated: false, reason: "no .duckdb files in dir" }));
+  process.exit(0);
+}
+
+const files: Array<{ file: string; migrated: boolean; message?: string; reason?: string }> = [];
+let anyMigrated = false;
+
+for (const file of entries) {
+  const path = join(dir, file);
+  let store: any;
+  try {
+    store = new DuckDBStore({ path });
+    const obs = await store.getStore("observability");
+    await obs.init();
+    if (typeof obs.migrateSpans !== "function") {
+      files.push({ file, migrated: false, reason: "no migrateSpans method on store" });
+      continue;
+    }
+    const r = await obs.migrateSpans();
+    const migrated = !r.alreadyMigrated;
+    files.push({ file, migrated, message: r.message });
+    if (migrated) anyMigrated = true;
+  } catch (err: any) {
+    console.error(JSON.stringify({ error: `${file}: ${err.message}` }));
+    process.exit(2);
+  } finally {
+    try { await store?.close?.(); } catch {}
+  }
+}
+
+console.log(JSON.stringify({ migrated: anyMigrated, files }));
+process.exit(0);

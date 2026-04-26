@@ -15,9 +15,9 @@ export const UPDATE_PIPELINE: ReadonlyArray<{ name: string; fn: PhaseFn }> = [
   { name: "fetch", fn: fetchPhase },
   { name: "merge", fn: mergePhase },
   { name: "install", fn: installPhase },
+  { name: "migrate", fn: migratePhase },
   { name: "build", fn: buildPhase },
   { name: "apply", fn: applyPhase },
-  { name: "migrate", fn: migratePhase },
   { name: "patch", fn: patchPhase },
   { name: "restart", fn: restartPhase },
 ] as const;

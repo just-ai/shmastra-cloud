@@ -87,17 +87,29 @@ export async function updateSandbox(
     // Only flag the phase as errored on an actual error. On stop, leave the
     // phase in "running" and let the UI color by the overall "stopped" status.
     if (currentPhase && !stopped) onPhase(currentPhase, "error");
-    // Cleanup is best-effort — never let it mask the terminal status broadcast, or
-    // the UI will be stuck on "running" forever.
+    // On error, also try to revive pm2 so the user isn't left with a dead
+    // sandbox while we figure out what went wrong. Worktree cleanup happens
+    // in `finally` regardless of success/failure.
     try {
-      await cleanup(sandbox, log);
       await ensurePm2Running(sandbox, log);
     } catch (cleanupErr: any) {
-      log(`✗ Cleanup/restart failed: ${cleanupErr.message}`);
+      log(`✗ Restart failed: ${cleanupErr.message}`);
     }
     const e = elapsed();
     const status: UpdateStatus = stopped ? "stopped" : "error";
     onStatus(status);
     return { sandboxId, status, elapsed: e, error: stopped ? undefined : err.message };
+  } finally {
+    // Always wipe the worktree at the end of the update, regardless of
+    // outcome. Phases that need worktree access (migrate, restart-swap) run
+    // before this block; once we get here their work is done. This was
+    // previously the last step of applyPhase, but lifting it to `finally`
+    // ensures a failed migrate or build doesn't leave a zombie worktree that
+    // blocks the next update's `git worktree add`.
+    try {
+      await cleanup(sandbox, log);
+    } catch (cleanupErr: any) {
+      log(`✗ Worktree cleanup failed: ${cleanupErr.message}`);
+    }
   }
 }
