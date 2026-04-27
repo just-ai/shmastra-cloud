@@ -27,6 +27,7 @@ export function badge(s, phase) {
       padding: "2px 10px 2px 8px", borderRadius: "9999px",
       fontSize: "12px", fontWeight: 500, fontFamily: "'JetBrains Mono', monospace",
       background: styles.background, color: styles.color,
+      minWidth: "84px", justifyContent: "center", boxSizing: "border-box",
     },
   },
     h("span", {

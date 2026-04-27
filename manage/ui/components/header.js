@@ -1,6 +1,6 @@
 import { createElement as h } from "react";
 
-export function Header({ search, setSearch, filtered, total, reloadSandboxes, anyRunning, stopAll, updateAll, envProfile, envProfiles, envFiles, envSwitching, switchEnv }) {
+export function Header({ search, setSearch, filtered, total, reloadSandboxes, anyRunning, anyStopping, stopAll, updateAll, envProfile, envProfiles, envFiles, envSwitching, switchEnv }) {
   return h("div", {
     style: { display: "flex", alignItems: "center", gap: "10px", marginBottom: "24px" },
   },
@@ -57,18 +57,26 @@ export function Header({ search, setSearch, filtered, total, reloadSandboxes, an
       onMouseLeave: (e) => { e.currentTarget.style.background = "var(--bg-2)"; e.currentTarget.style.color = "var(--text-1)"; },
     }, "\u21BB"),
     h("button", {
-      onClick: anyRunning ? stopAll : updateAll,
+      onClick: anyStopping ? undefined : (anyRunning ? stopAll : updateAll),
+      disabled: anyStopping,
       style: {
         padding: "3px 10px", borderRadius: "4px",
-        border: `1px solid ${anyRunning ? "var(--red)" : "var(--border)"}`,
-        background: anyRunning ? "var(--red-bg)" : "var(--bg-2)",
-        color: anyRunning ? "var(--red)" : "var(--green)",
-        cursor: "pointer", fontSize: "12px", fontWeight: 500,
+        border: `1px solid ${anyStopping ? "var(--border)" : (anyRunning ? "var(--red)" : "var(--border)")}`,
+        background: anyStopping ? "var(--bg-3)" : (anyRunning ? "var(--red-bg)" : "var(--bg-2)"),
+        color: anyStopping ? "var(--text-2)" : (anyRunning ? "var(--red)" : "var(--green)"),
+        cursor: anyStopping ? "not-allowed" : "pointer",
+        fontSize: "12px", fontWeight: 500,
         fontFamily: "'JetBrains Mono', monospace",
         transition: "all 0.15s", height: "24px", whiteSpace: "nowrap",
       },
-      onMouseEnter: (e) => { e.target.style.background = anyRunning ? "rgba(239,68,68,0.2)" : "var(--bg-3)"; },
-      onMouseLeave: (e) => { e.target.style.background = anyRunning ? "var(--red-bg)" : "var(--bg-2)"; },
-    }, anyRunning ? "stop all" : "update all"),
+      onMouseEnter: (e) => {
+        if (anyStopping) return;
+        e.target.style.background = anyRunning ? "rgba(239,68,68,0.2)" : "var(--bg-3)";
+      },
+      onMouseLeave: (e) => {
+        if (anyStopping) return;
+        e.target.style.background = anyRunning ? "var(--red-bg)" : "var(--bg-2)";
+      },
+    }, anyStopping ? "stopping…" : (anyRunning ? "stop all" : "update all")),
   );
 }

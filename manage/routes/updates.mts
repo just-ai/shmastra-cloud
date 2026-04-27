@@ -15,6 +15,7 @@ export function broadcast(event: string, data: unknown) {
 
 const currentPhases = new Map<string, string>();
 const runningUpdates = new Map<string, AbortController>();
+let updateAllAborted = false;
 
 function makeSandboxLog(sandboxId: string): LogFn {
   return (msg: string) => broadcast("log", { sandboxId, message: msg, phase: currentPhases.get(sandboxId) || null });
@@ -77,24 +78,35 @@ export function handleStopOne(req: Request, res: Response) {
 }
 
 export function handleStopAll(_req: Request, res: Response) {
+  updateAllAborted = true;
   for (const ac of runningUpdates.values()) ac.abort();
   res.json({ stopped: runningUpdates.size });
 }
 
-export function handleUpdateAll(_req: Request, res: Response) {
+export function handleUpdateAll(req: Request, res: Response) {
+  const requestedIds: string[] | null = Array.isArray(req.body?.sandboxIds)
+    ? req.body.sandboxIds.filter((x: unknown): x is string => typeof x === "string")
+    : null;
   res.json({ started: true });
+  updateAllAborted = false;
 
   (async () => {
     try {
-      const entries = await fetchSandboxes();
-      const queue = entries.filter(({ sandboxId: id }) => !runningUpdates.has(id));
+      let ids: string[];
+      if (requestedIds && requestedIds.length > 0) {
+        ids = requestedIds;
+      } else {
+        const entries = await fetchSandboxes();
+        ids = entries.map((e) => e.sandboxId);
+      }
+      const queue = ids.filter((id) => !runningUpdates.has(id));
       const CONCURRENCY = 5;
       let idx = 0;
 
       async function next(): Promise<void> {
-        const entry = queue[idx++];
-        if (!entry) return;
-        const { sandboxId: id } = entry;
+        if (updateAllAborted) return;
+        const id = queue[idx++];
+        if (!id) return;
         const ac = new AbortController();
         runningUpdates.set(id, ac);
         broadcast("status", { sandboxId: id, status: "running" });

@@ -382,14 +382,13 @@
       D + " .sx-toggle .sx-slider::before { content:''; position:absolute; width:10px; height:10px; left:2px; top:2px; background:#666; border-radius:50%; transition:transform 160ms ease, background 160ms ease; }",
       D + " .sx-toggle input:checked + .sx-slider { background:rgba(34,197,94,0.25); }",
       D + " .sx-toggle input:checked + .sx-slider::before { transform:translateX(12px); background:#22c55e; }",
-      /* Status badges */
-      D + " .sx-badge { display:inline-flex; align-items:center; gap:4px; padding:1px 6px 1px 5px; border-radius:9999px; font-size:10px; font-weight:500; font-family:'JetBrains Mono','SF Mono',monospace; line-height:1.4; }",
-      D + " .sx-badge .sx-dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; }",
-      D + " .sx-badge.success { background:rgba(34,197,94,0.1); color:#22c55e; } " + D + " .sx-badge.success .sx-dot { background:#22c55e; }",
-      D + " .sx-badge.error { background:rgba(239,68,68,0.1); color:#ef4444; } " + D + " .sx-badge.error .sx-dot { background:#ef4444; }",
-      D + " .sx-badge.running { background:rgba(59,130,246,0.1); color:#3b82f6; } " + D + " .sx-badge.running .sx-dot { background:#3b82f6; }",
-      D + " .sx-badge.pending { background:#222; color:#666; } " + D + " .sx-badge.pending .sx-dot { background:#444; }",
-      D + " .sx-badge.warn { background:rgba(234,179,8,0.1); color:#eab308; } " + D + " .sx-badge.warn .sx-dot { background:#eab308; }",
+      /* Status dots */
+      D + " .sx-status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink:0; cursor:default; }",
+      D + " .sx-status-dot.sx-status-success { background:#22c55e; }",
+      D + " .sx-status-dot.sx-status-error { background:#ef4444; }",
+      D + " .sx-status-dot.sx-status-running { background:#3b82f6; }",
+      D + " .sx-status-dot.sx-status-pending { background:#666; }",
+      D + " .sx-status-dot.sx-status-warn { background:#eab308; }",
       /* Misc */
       D + " .sx-error { color:#ef4444; font-size:11px; margin:4px 0; padding:6px 8px; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:4px; }",
       D + " .sx-muted { color:#666; font-size:10px; }",
@@ -683,7 +682,7 @@
   }
 
   function runStatusBadge(status) {
-    // Map raw workflow status to a semantic badge class + label.
+    // Map raw workflow status to a semantic dot color + tooltip label.
     var cls = "pending";
     var label = String(status);
     var s = String(status).toLowerCase();
@@ -694,11 +693,11 @@
     else if (s === "pending")                  { cls = "pending"; label = "pending"; }
     else                                        { cls = "warn";    label = s || "unknown"; }
 
-    var badge = el("span", { class: "sx-badge " + cls }, [
-      el("span", { class: "sx-dot" }),
-      document.createTextNode(label),
-    ]);
-    return badge;
+    return el("span", {
+      class: "sx-status-dot sx-status-" + cls,
+      title: label,
+      "aria-label": label,
+    });
   }
 
   function renderRuns(body, schedule) {

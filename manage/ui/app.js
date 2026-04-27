@@ -8,6 +8,7 @@ import { SlidePanel } from "./components/slide-panel.js";
 export function App() {
   const [sandboxes, setSandboxes] = useState([]);
   const [statuses, setStatuses] = useState({});
+  const [stopping, setStopping] = useState({});
   const [phases, setPhases] = useState({});
   // Per-sandbox map of phase name → PhaseStatus ("running" | "done" | "skipped" | "error").
   // Drives the phase bar coloring independently of log content.
@@ -79,6 +80,14 @@ export function App() {
     es.addEventListener("status", (e) => {
       const { sandboxId, status } = JSON.parse(e.data);
       setStatuses((prev) => ({ ...prev, [sandboxId]: status }));
+      if (status !== "running") {
+        setStopping((prev) => {
+          if (!prev[sandboxId]) return prev;
+          const next = { ...prev };
+          delete next[sandboxId];
+          return next;
+        });
+      }
     });
     es.addEventListener("phase", (e) => {
       const { sandboxId, phase, status } = JSON.parse(e.data);
@@ -167,16 +176,28 @@ export function App() {
   }, []);
 
   const stopOne = useCallback((id) => {
+    setStopping((prev) => ({ ...prev, [id]: true }));
     fetch(`${API}/api/stop/${id}`, { method: "POST" });
   }, []);
 
-  const updateAll = useCallback(() => {
-    fetch(`${API}/api/update-all`, { method: "POST" });
+  const updateAll = useCallback((sandboxIds) => {
+    fetch(`${API}/api/update-all`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sandboxIds }),
+    });
   }, []);
 
   const stopAll = useCallback(() => {
+    setStopping((prev) => {
+      const next = { ...prev };
+      for (const [id, s] of Object.entries(statuses)) {
+        if (s === "running") next[id] = true;
+      }
+      return next;
+    });
     fetch(`${API}/api/stop-all`, { method: "POST" });
-  }, []);
+  }, [statuses]);
 
   const reloadSandboxes = useCallback(() => {
     return fetch(`${API}/api/sandboxes`)
@@ -398,6 +419,7 @@ export function App() {
   // ── Derived state ──
 
   const anyRunning = Object.values(statuses).some((s) => s === "running");
+  const anyStopping = Object.keys(stopping).length > 0;
   const filtered = sandboxes.filter(({ sandboxId, email }) => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -429,11 +451,12 @@ export function App() {
         h(Header, {
           search, setSearch,
           filtered: filtered.length, total: sandboxes.length,
-          reloadSandboxes, anyRunning, stopAll, updateAll,
+          reloadSandboxes, anyRunning, anyStopping, stopAll,
+          updateAll: () => updateAll(filtered.map((s) => s.sandboxId)),
           envProfile, envProfiles, envFiles, envSwitching, switchEnv,
         }),
         h(SandboxTable, {
-          filtered, selected, setSelected, statuses, phases, getStatus, updateOne, stopOne, setTab, loading,
+          filtered, selected, setSelected, statuses, stopping, phases, getStatus, updateOne, stopOne, setTab, loading,
         }),
       ),
     ),

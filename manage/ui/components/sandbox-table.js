@@ -2,7 +2,7 @@ import { createElement as h } from "react";
 import { timeAgo } from "../utils.js";
 import { badge, dbStatusColor } from "./status-badge.js";
 
-export function SandboxTable({ filtered, selected, setSelected, statuses, phases, getStatus, updateOne, stopOne, setTab, loading }) {
+export function SandboxTable({ filtered, selected, setSelected, statuses, stopping, phases, getStatus, updateOne, stopOne, setTab, loading }) {
   if (loading) {
     return h("div", { style: { color: "var(--text-2)", textAlign: "center", padding: "48px 0" } }, "Loading...");
   }
@@ -67,20 +67,35 @@ export function SandboxTable({ filtered, selected, setSelected, statuses, phases
               "data-tooltip-id": "tt", "data-tooltip-content": lastActiveAt ? new Date(lastActiveAt).toLocaleString() : "",
             }, timeAgo(lastActiveAt)),
             h("td", { style: { padding: "12px 16px", textAlign: "right", display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" } },
-              statuses[id] ? badge(getStatus(id), phases[id]) : null,
+              statuses[id]
+                ? badge(getStatus(id), phases[id])
+                : h("span", { style: { display: "inline-block", minWidth: "84px" } }),
               getStatus(id) === "running"
-                ? h("button", {
-                    onClick: (e) => { e.stopPropagation(); stopOne(id); },
-                    style: {
-                      padding: "4px 12px", borderRadius: "4px",
-                      border: "1px solid var(--red)", background: "var(--red-bg)",
-                      color: "var(--red)", cursor: "pointer",
-                      fontSize: "12px", fontFamily: "'JetBrains Mono', monospace",
-                      transition: "all 0.15s",
-                    },
-                    onMouseEnter: (e) => { e.target.style.background = "rgba(239,68,68,0.2)"; },
-                    onMouseLeave: (e) => { e.target.style.background = "var(--red-bg)"; },
-                  }, "stop")
+                ? (stopping && stopping[id]
+                    ? h("button", {
+                        onClick: (e) => { e.stopPropagation(); },
+                        disabled: true,
+                        style: {
+                          padding: "4px 12px", borderRadius: "4px",
+                          border: "1px solid var(--border)", background: "var(--bg-3)",
+                          color: "var(--text-2)", cursor: "not-allowed",
+                          fontSize: "12px", fontFamily: "'JetBrains Mono', monospace",
+                          minWidth: "72px", boxSizing: "border-box", textAlign: "center",
+                        },
+                      }, "stopping…")
+                    : h("button", {
+                        onClick: (e) => { e.stopPropagation(); stopOne(id); },
+                        style: {
+                          padding: "4px 12px", borderRadius: "4px",
+                          border: "1px solid var(--red)", background: "var(--red-bg)",
+                          color: "var(--red)", cursor: "pointer",
+                          fontSize: "12px", fontFamily: "'JetBrains Mono', monospace",
+                          transition: "all 0.15s",
+                          minWidth: "72px", boxSizing: "border-box", textAlign: "center",
+                        },
+                        onMouseEnter: (e) => { e.target.style.background = "rgba(239,68,68,0.2)"; },
+                        onMouseLeave: (e) => { e.target.style.background = "var(--red-bg)"; },
+                      }, "stop"))
                 : h("button", {
                     onClick: (e) => { e.stopPropagation(); updateOne(id); setSelected(id); setTab((prev) => ({ ...prev, [id]: "logs" })); },
                     style: {
@@ -89,6 +104,7 @@ export function SandboxTable({ filtered, selected, setSelected, statuses, phases
                       color: "var(--text-1)", cursor: "pointer",
                       fontSize: "12px", fontFamily: "'JetBrains Mono', monospace",
                       transition: "all 0.15s",
+                      minWidth: "72px", boxSizing: "border-box", textAlign: "center",
                     },
                     onMouseEnter: (e) => { e.target.style.background = "var(--bg-3)"; },
                     onMouseLeave: (e) => { e.target.style.background = "transparent"; },
