@@ -153,10 +153,10 @@ async function provisionSandbox(userId: string) {
         OPENAI_BASE_URL: `${appUrl}/api/gateway/openai`,
         ANTHROPIC_BASE_URL: `${appUrl}/api/gateway/anthropic`,
         GEMINI_BASE_URL: `${appUrl}/api/gateway/gemini`,
-        GOOGLE_BASE_URL: `${appUrl}/api/gateway/gemini`,
+        GOOGLE_BASE_URL: `${appUrl}/api/gateway/google`,
         GOOGLE_GEMINI_BASE_URL: `${appUrl}/api/gateway/gemini`,
-        GOOGLE_GENERATIVE_BASE_URL: `${appUrl}/api/gateway/gemini`,
-        GOOGLE_GENERATIVE_AI_BASE_URL: `${appUrl}/api/gateway/gemini`,
+        GOOGLE_GENERATIVE_BASE_URL: `${appUrl}/api/gateway/google`,
+        GOOGLE_GENERATIVE_AI_BASE_URL: `${appUrl}/api/gateway/google`,
       },
     });
 
