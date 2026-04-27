@@ -20,6 +20,8 @@ const PROBE_TIMEOUT_MS = 3000;
 const READY_ENDPOINT = "/health";
 const STARTUP_TIMEOUT_MS = 180 * 1000;
 const STARTUP_POLL_INTERVAL_MS = 3000;
+const RESUME_PROBE_ATTEMPTS = 3;
+const RESUME_PROBE_INTERVAL_MS = 2000;
 
 function getSandboxHost(sandbox: Sandbox) {
   return `https://${sandbox.getHost(APP_PORT)}`;
@@ -81,10 +83,26 @@ async function waitForSandboxApp(host: string) {
   throw new Error("Timed out waiting for Mastra server to start");
 }
 
-async function ensureSandboxAppRunning(sandbox: Sandbox) {
+async function probeReadyWithRetry(host: string) {
+  for (let attempt = 0; attempt < RESUME_PROBE_ATTEMPTS; attempt++) {
+    if (await isSandboxReady(host)) {
+      return true;
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, RESUME_PROBE_INTERVAL_MS),
+    );
+  }
+
+  return false;
+}
+
+async function ensureSandboxAppRunning(
+  sandbox: Sandbox,
+  options: { resumed?: boolean } = {},
+) {
   const sandboxHost = getSandboxHost(sandbox);
 
-  if (await isSandboxReady(sandboxHost)) {
+  if (options.resumed && (await probeReadyWithRetry(sandboxHost))) {
     return sandboxHost;
   }
 
@@ -219,7 +237,7 @@ export async function getSandboxForUser(userId: string) {
 
 export async function connectToSandbox(sandboxId: string) {
   const sandbox = await Sandbox.connect(sandboxId);
-  await ensureSandboxAppRunning(sandbox);
+  await ensureSandboxAppRunning(sandbox, { resumed: true });
   return sandbox;
 }
 
