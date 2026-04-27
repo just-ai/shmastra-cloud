@@ -79,12 +79,8 @@ function fixPm2Config(): void {
   }
 }
 
-let serverHealed = false;
-
-
 async function heal(): Promise<boolean> {
   log("Server crashed, starting heal...");
-  serverHealed = false;
   await reportStatus("healing");
 
   const [
@@ -122,7 +118,6 @@ async function heal(): Promise<boolean> {
         try {
           const res = await fetch("http://localhost:4111/health", { signal: AbortSignal.timeout(3_000) });
           if (res.ok) {
-            serverHealed = true;
             return { status: "healthy", message: "Server is up and responding" };
           }
         } catch {}
@@ -264,9 +259,8 @@ Rules:
         }
         flushText();
 
-        if (serverHealed) {
+        if (await isServerHealthy()) {
           log("Server is back online. Heal successful. Restarting healer to free memory...");
-          serverHealed = false;
           await reportStatus("ready");
           fixPm2Config();
           pm2.restart("healer", () => {});

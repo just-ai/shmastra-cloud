@@ -9,19 +9,49 @@ const SHMASTRA_CAPABILITIES = [
   "Stay in the browser while Shmastra prepares the workspace around your ideas.",
 ];
 
+const HEALING_MESSAGES = [
+  "Your workspace hit a snag — Shmastra is patching things up.",
+  "Restarting the Mastra runtime and verifying it comes back clean.",
+  "Inspecting recent edits and clearing whatever wedged the process.",
+  "Hang tight — studio reopens automatically once the sandbox is healthy.",
+];
+
+type Mode = "creating" | "healing" | "error";
+
+type ServerStatus =
+  | "creating"
+  | "healing"
+  | "ready"
+  | "error"
+  | "broken"
+  | "no_user";
+
+function modeFor(status: ServerStatus): Mode {
+  if (status === "healing") return "healing";
+  if (status === "error" || status === "broken") return "error";
+  return "creating";
+}
+
 export function SandboxSetup({
   error: initialError,
   returnTo = "/studio",
+  initialStatus,
 }: {
   error?: string | null;
   returnTo?: string;
+  initialStatus?: ServerStatus;
 }) {
-  const [status, setStatus] = useState(initialError ? "error" : "creating");
+  const initialMode: Mode = initialError
+    ? "error"
+    : initialStatus
+      ? modeFor(initialStatus)
+      : "creating";
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [errorMessage, setErrorMessage] = useState(initialError || "");
-  const [capabilityIndex, setCapabilityIndex] = useState(0);
+  const [messageIndex, setMessageIndex] = useState(0);
 
   useEffect(() => {
-    if (status !== "creating") return;
+    if (mode === "error") return;
 
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -29,7 +59,10 @@ export function SandboxSetup({
     const poll = async () => {
       try {
         const res = await fetch("/api/sandbox/status", { cache: "no-store" });
-        const data = await res.json();
+        const data = (await res.json()) as {
+          status: ServerStatus;
+          errorMessage?: string;
+        };
 
         if (cancelled) return;
 
@@ -38,10 +71,16 @@ export function SandboxSetup({
           return;
         }
 
-        if (data.status === "error") {
-          setStatus("error");
-          setErrorMessage(data.errorMessage || "Unknown error");
+        if (data.status === "error" || data.status === "broken") {
+          setMode("error");
+          setErrorMessage(data.errorMessage || "");
           return;
+        }
+
+        const nextMode = modeFor(data.status);
+        if (nextMode !== mode) {
+          setMode(nextMode);
+          setMessageIndex(0);
         }
       } catch {
         if (cancelled) return;
@@ -61,60 +100,72 @@ export function SandboxSetup({
         clearTimeout(timeoutId);
       }
     };
-  }, [returnTo, status]);
+  }, [returnTo, mode]);
 
   useEffect(() => {
-    if (status !== "creating") return;
+    if (mode === "error") return;
 
     const intervalId = window.setInterval(() => {
-      setCapabilityIndex((current) => (current + 1) % SHMASTRA_CAPABILITIES.length);
+      const total =
+        mode === "healing"
+          ? HEALING_MESSAGES.length
+          : SHMASTRA_CAPABILITIES.length;
+      setMessageIndex((current) => (current + 1) % total);
     }, 4200);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [status]);
+  }, [mode]);
 
-  async function handleRetry() {
-    setStatus("creating");
-    setErrorMessage("");
-    await fetch("/api/sandbox/retry", { method: "POST" });
-  }
+  const isHealing = mode === "healing";
+  const messages = isHealing ? HEALING_MESSAGES : SHMASTRA_CAPABILITIES;
+  const headlineLabel = isHealing
+    ? "healing shmastra workspace"
+    : "preparing shmastra workspace";
+  const footerLabel = isHealing
+    ? "studio reopens automatically once the sandbox is healthy"
+    : "studio opens automatically when everything is ready";
+  const dotColor = isHealing
+    ? "bg-[#ffb86b] shadow-[0_0_16px_rgba(255,184,107,0.7)]"
+    : "bg-[var(--accent)] shadow-[0_0_16px_rgba(135,247,166,0.7)]";
 
   return (
     <main className="screen-grid flex min-h-screen items-center justify-center px-6 py-10">
       <section className="flex w-full max-w-3xl flex-col items-center text-center">
-        {status === "creating" && (
+        {mode !== "error" && (
           <div className="w-full max-w-2xl text-left">
             <div className="flex items-center gap-3">
-              <span className="status-dot h-1.5 w-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_16px_rgba(135,247,166,0.7)]" />
+              <span className={`status-dot h-1.5 w-1.5 rounded-full ${dotColor}`} />
               <div className="shimmer-text text-[10px] uppercase tracking-[0.34em] text-transparent">
-                preparing shmastra workspace
+                {headlineLabel}
               </div>
             </div>
             <p className="mt-8 max-w-2xl text-2xl font-medium leading-10 tracking-[-0.06em] text-[var(--text-primary)] transition duration-700 sm:text-[32px]">
-              {SHMASTRA_CAPABILITIES[capabilityIndex]}
+              {messages[messageIndex % messages.length]}
             </p>
             <p className="mt-4 text-[11px] uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
-              studio opens automatically when everything is ready
+              {footerLabel}
             </p>
           </div>
         )}
 
-        {status === "error" && (
-          <div className="w-full max-w-md rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-bg)] px-6 py-7 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_24px_80px_rgba(0,0,0,0.35)] backdrop-blur">
-            <div className="text-[10px] uppercase tracking-[0.3em] text-[#ff8f8f]">
-              workspace error
+        {mode === "error" && (
+          <div className="w-full max-w-2xl text-left">
+            <div className="flex items-center gap-3">
+              <span className="status-dot h-1.5 w-1.5 rounded-full bg-[#ff8f8f] shadow-[0_0_16px_rgba(255,143,143,0.7)]" />
+              <div className="shimmer-text text-[10px] uppercase tracking-[0.34em] text-transparent">
+                workspace unavailable
+              </div>
             </div>
-            <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
-              We could not prepare your Shmastra workspace yet: {errorMessage}
+            <p className="mt-8 max-w-2xl text-2xl font-medium leading-10 tracking-[-0.06em] text-[var(--text-primary)] sm:text-[32px]">
+              Please reach out to an administrator to fix this issue
             </p>
-            <button
-              onClick={handleRetry}
-              className="mt-6 inline-flex h-10 items-center justify-center rounded-md border border-[var(--panel-border-strong)] bg-white/4 px-4 text-xs font-medium tracking-[0.02em] text-white transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-            >
-              Retry workspace launch
-            </button>
+            {errorMessage && (
+              <pre className="mt-6 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--panel-border)] bg-black/30 px-3 py-2 font-mono text-[12px] leading-5 text-[var(--text-tertiary)]">
+                {errorMessage}
+              </pre>
+            )}
           </div>
         )}
       </section>

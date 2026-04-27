@@ -32,8 +32,18 @@ export default async function WorkspacePage({
     return <SandboxSetup returnTo={returnTo} />;
   }
 
-  if (sandbox.status === "creating") {
-    return <SandboxSetup returnTo={returnTo} />;
+  if (
+    sandbox.status === "creating" ||
+    sandbox.status === "healing" ||
+    sandbox.status === "broken"
+  ) {
+    return (
+      <SandboxSetup
+        returnTo={returnTo}
+        initialStatus={sandbox.status}
+        error={sandbox.status === "broken" ? sandbox.error_message : null}
+      />
+    );
   }
 
   redirect(returnTo);
