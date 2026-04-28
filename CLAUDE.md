@@ -37,7 +37,9 @@ Browser → Next.js middleware (WorkOS auth + org check)
 2. `/workspace` calls `provisionSandbox()` → creates E2B instance from `shmastra` template
 3. Injects virtual keys + env vars, starts `pnpm dev` via pm2
 4. Polls `/health` until Mastra server responds → `status: 'ready'`
-5. After 10min idle → sandbox pauses; auto-resumes on next `/api/mastra/*` request
+5. Writes MCP config (`writeMcpConfig`) and bundled skills (`writeSkills`) into sandbox
+6. Reads `/home/user/.template-version` from the new sandbox to initialise the `version` field (for patch-skip tracking)
+7. After 10min idle → sandbox pauses; auto-resumes on next `/api/mastra/*` request
 
 ### Virtual key system
 
@@ -52,7 +54,10 @@ Migrations in `supabase/migrations/`.
 ### Key files
 
 - `middleware.ts` — auth, org check, workspace redirect
-- `lib/sandbox.ts` — create, connect, health-check, provision sandboxes
+- `lib/sandbox.ts` — create, connect, health-check, provision sandboxes; calls `writeMcpConfig` and `writeSkills` during provisioning
+- `lib/mcp-config.ts` — writes `~/.mastracode/mcp.json` into the sandbox (cloud MCP endpoint + virtual-key auth)
+- `lib/skill-injection.ts` — writes bundled skills from `lib/skills/` into `~/.mastracode/skills/` in the sandbox at provision time; idempotent overwrite so newer cloud builds ship updated skill text without needing a sandbox update
+- `lib/skills/` — bundled skill directories shipped to every sandbox (currently: `shmastra-scheduler`)
 - `lib/db.ts` — all Supabase queries
 - `lib/virtual-keys.ts` — virtual key generation/resolution
 - `app/api/mastra/[...path]/route.ts` — sandbox proxy
@@ -64,7 +69,8 @@ Migrations in `supabase/migrations/`.
   - `env.mts` — dotenv + Supabase/Anthropic client init
   - `sandbox.mts` — shared types, fetchSandboxes, run() helper
   - `update/` — update pipeline
-    - `updater.mts` — 9-phase sandbox update pipeline
+    - `updater.mts` — update orchestration with rollback on failure
+    - `phases/` — one file per pipeline phase (fetch, merge, install, build, migrate, apply, patch, restart)
     - `conflicts.mts` — conflict resolution (Claude API + Mastra agent)
     - `runner.mts` — patch script runner
   - `agent/` — agent sessions
@@ -98,7 +104,11 @@ Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/schedu
 
 ### Sandbox manager (`manage/`)
 
-**Update mode**: Updates sandboxes to latest `origin/main` using git worktrees (dev server keeps running during merge). Auto-resolves conflicts: lockfiles → delete & regenerate, config files → Claude API, source files → Mastra agent. Web UI mode (`--serve`) runs updates in parallel with concurrency limit of 5, SSE for real-time logs.
+**Update mode**: Updates sandboxes to latest `origin/main` using git worktrees (dev server keeps running during fetch/merge/install/build phases). Phase pipeline: **fetch → merge → install → build → migrate → apply → patch → restart** — each phase is a separate file under `manage/update/phases/`. Auto-resolves conflicts: lockfiles → delete & regenerate, config files → Claude API, source files → Mastra agent. Web UI mode (`--serve`) runs updates in parallel with concurrency limit of 5, SSE for real-time logs.
+
+The **migrate** phase handles DuckDB schema migrations: stops pm2 to flush the WAL, snapshots `.duckdb` files into the worktree, runs the migration script (using new-version node_modules), then swaps migrated files back into MAIN_DIR. pm2 stays down through apply/patch until the restart phase.
+
+On any phase failure the updater rolls back: git reset to the pre-update HEAD, restores `.duckdb` from backup (if migration ran), reinstalls deps on the rolled-back tree, then revives pm2 on the old code.
 
 **Agent mode** (`--agent <id>`): Interactive CLI chat with a Mastra agent connected to a sandbox. The agent can execute commands, read/edit files, manage processes. Web UI also supports chat via slide-out panel.
 
