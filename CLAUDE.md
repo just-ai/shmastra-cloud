@@ -37,9 +37,9 @@ Browser → Next.js middleware (WorkOS auth + org check)
 2. `/workspace` calls `provisionSandbox()` → creates E2B instance from `shmastra` template
 3. Injects virtual keys + env vars, starts `pnpm dev` via pm2
 4. Polls `/health` until Mastra server responds → `status: 'ready'`
-5. Writes MCP config (`writeMcpConfig`) and bundled skills (`writeSkills`) into sandbox
+5. Writes MCP config and bundled skills into sandbox so the coding agent gets cloud-specific tools (scheduler, etc.)
 6. Reads `/home/user/.template-version` from the new sandbox to initialise the `version` field (for patch-skip tracking)
-7. After 10min idle → sandbox pauses; auto-resumes on next `/api/mastra/*` request
+7. After 10min idle → sandbox pauses; auto-resumes on the next request
 
 ### Virtual key system
 
@@ -54,8 +54,8 @@ Migrations in `supabase/migrations/`.
 ### Key files
 
 - `middleware.ts` — auth, org check, workspace redirect
-- `lib/sandbox.ts` — create, connect, health-check, provision sandboxes; calls `writeMcpConfig` and `writeSkills` during provisioning
-- `lib/mcp-config.ts` — writes `~/.mastracode/mcp.json` into the sandbox (cloud MCP endpoint + virtual-key auth)
+- `lib/sandbox.ts` — create, connect, health-check, provision sandboxes; at provision time injects cloud-specific MCP tools and bundled skills into the sandbox so the coding agent inside can use cloud capabilities
+- `lib/mcp-config.ts` — extends the sandbox coding agent with cloud-specific MCP tools (e.g. scheduler) by writing `~/.mastracode/mcp.json` pointing to the cloud's `/api/mcp` endpoint with a virtual-key bearer token
 - `lib/skill-injection.ts` — writes bundled skills from `lib/skills/` into `~/.mastracode/skills/` in the sandbox at provision time; idempotent overwrite so newer cloud builds ship updated skill text without needing a sandbox update
 - `lib/skills/` — bundled skill directories shipped to every sandbox (currently: `shmastra-scheduler`)
 - `lib/db.ts` — all Supabase queries
