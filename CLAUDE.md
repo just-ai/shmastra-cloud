@@ -49,7 +49,7 @@ Sandboxes never see real API keys. Instead they get `vk_<userId>_<hex>` tokens. 
 
 Tables: `users` (includes `virtual_key` column), `sandboxes` (1:1 with users).
 View: `user_sandboxes` (join for admin queries).
-Migrations in `supabase/migrations/`.
+Migrations in `supabase/migrations/` — all schema (including schedules, pg_cron setup) is consolidated in `001_init.sql`.
 
 ### Key files
 
@@ -95,7 +95,7 @@ Migrations in `supabase/migrations/`.
 
 ### Scheduler
 
-Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/scheduler.ts`). Schedules live in Supabase and are executed by pg_cron. Migration: `supabase/migrations/006_schedules.sql`.
+Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/scheduler.ts`). Schedules live in Supabase and are executed by pg_cron. Schema defined in `supabase/migrations/001_init.sql`.
 
 - **Fire path**: pg_cron → `scheduler_trigger(sid)` → `net.http_post` (fire-and-forget) → `/api/schedules/internal/fire?sid=...` (Next.js). The handler wakes the sandbox (`connectToSandbox` → blocks on `/health`), then does two Mastra calls via `@mastra/client-js`: `workflow.createRun()` (gets a Mastra-allocated runId) → `run.start({ inputData })` (kicks execution, returns fast). Result is recorded in `schedule_runs` (status `pending` on success, `failed` on create-run/start error).
 - **URL discovery**: `schedules.public_url` is a snapshot of `getAppUrl()` at creation time; `scheduler_trigger` reads it at fire time. No GUCs, no shared token — `sid` (UUIDv4) is the capability.
@@ -104,7 +104,7 @@ Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/schedu
 
 ### Sandbox manager (`manage/`)
 
-**Update mode**: Updates sandboxes to latest `origin/main` using git worktrees (dev server keeps running during fetch/merge/install/build phases). Phase pipeline: **fetch → merge → install → build → migrate → apply → patch → restart** — each phase is a separate file under `manage/update/phases/`. Auto-resolves conflicts: lockfiles → delete & regenerate, config files → Claude API, source files → Mastra agent. Web UI mode (`--serve`) runs updates in parallel with concurrency limit of 5, SSE for real-time logs.
+**Update mode**: Updates sandboxes to latest `origin/main` using git worktrees (dev server keeps running during fetch/merge/install/build phases). Phase pipeline: **fetch → merge → install → build → migrate → apply → patch → restart** — each phase is a separate file under `manage/update/phases/`. The apply phase re-syncs MCP config and skills unconditionally so every sandbox always gets the latest cloud configuration regardless of what changed. Auto-resolves conflicts: lockfiles → delete & regenerate, config files → Claude API, source files → Mastra agent. Web UI mode (`--serve`) runs updates in parallel with concurrency limit of 5, SSE for real-time logs.
 
 The **migrate** phase handles DuckDB schema migrations: stops pm2 to flush the WAL, snapshots `.duckdb` files into the worktree, runs the migration script (using new-version node_modules), then swaps migrated files back into MAIN_DIR. pm2 stays down through apply/patch until the restart phase.
 
