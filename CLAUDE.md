@@ -40,6 +40,7 @@ Browser → Next.js middleware (WorkOS auth + org check)
 5. Writes MCP config and bundled skills into sandbox so the coding agent gets cloud-specific tools (scheduler, etc.)
 6. Reads `/home/user/.template-version` from the new sandbox to initialise the `version` field (for patch-skip tracking)
 7. After 10min idle → sandbox pauses; auto-resumes on the next request
+8. If provisioning fails → `error` state; automatically reprovisioned on the next user request via `claimSandboxRetry`
 
 ### Virtual key system
 
@@ -49,7 +50,7 @@ Sandboxes never see real API keys. Instead they get `vk_<userId>_<hex>` tokens. 
 
 Tables: `users` (includes `virtual_key` column), `sandboxes` (1:1 with users).
 View: `user_sandboxes` (join for admin queries).
-Migrations in `supabase/migrations/`.
+Migrations in `supabase/migrations/`. All schema (users, sandboxes, schedules, pg_cron setup) is in `supabase/migrations/001_init.sql`.
 
 ### Key files
 
@@ -95,7 +96,7 @@ Migrations in `supabase/migrations/`.
 
 ### Scheduler
 
-Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/scheduler.ts`). Schedules live in Supabase and are executed by pg_cron. Migration: `supabase/migrations/006_schedules.sql`.
+Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/scheduler.ts`). Schedules live in Supabase and are executed by pg_cron. All schema including scheduler tables is in `supabase/migrations/001_init.sql`.
 
 - **Fire path**: pg_cron → `scheduler_trigger(sid)` → `net.http_post` (fire-and-forget) → `/api/schedules/internal/fire?sid=...` (Next.js). The handler wakes the sandbox (`connectToSandbox` → blocks on `/health`), then does two Mastra calls via `@mastra/client-js`: `workflow.createRun()` (gets a Mastra-allocated runId) → `run.start({ inputData })` (kicks execution, returns fast). Result is recorded in `schedule_runs` (status `pending` on success, `failed` on create-run/start error).
 - **URL discovery**: `schedules.public_url` is a snapshot of `getAppUrl()` at creation time; `scheduler_trigger` reads it at fire time. No GUCs, no shared token — `sid` (UUIDv4) is the capability.
@@ -109,6 +110,8 @@ Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/schedu
 The **migrate** phase handles DuckDB schema migrations: stops pm2 to flush the WAL, snapshots `.duckdb` files into the worktree, runs the migration script (using new-version node_modules), then swaps migrated files back into MAIN_DIR. pm2 stays down through apply/patch until the restart phase.
 
 On any phase failure the updater rolls back: git reset to the pre-update HEAD, restores `.duckdb` from backup (if migration ran), reinstalls deps on the rolled-back tree, then revives pm2 on the old code.
+
+The **patch and restart phases always run** regardless of whether the sandbox was up to date — they re-sync cloud-managed artifacts (MCP config, skills, bootstrap files) that can change in the cloud independently of upstream commits.
 
 **Agent mode** (`--agent <id>`): Interactive CLI chat with a Mastra agent connected to a sandbox. The agent can execute commands, read/edit files, manage processes. Web UI also supports chat via slide-out panel.
 
@@ -129,3 +132,4 @@ Required in `.env.local`:
 - Studio is a Vite-built static bundle; `build:studio` must run before `next build`
 - The `shmastra` E2B template must be built once via `template:build` before sandboxes can be created
 - Sandbox health check endpoint: `GET /health` on port 4111
+- When configuring pm2 module settings in patch scripts, write `~/.pm2/module_conf.json` directly — do NOT use `pm2 set` (each call forks Node and restarts the module daemon; three calls can OOM-kill a memory-tight resumed sandbox with exit 137)
