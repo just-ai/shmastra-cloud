@@ -57,17 +57,6 @@ export function injectTokenScript(html: string, token: string): string {
   return tag + html;
 }
 
-export function injectOwnerFlag(html: string): string {
-  // Tells shmastra.js it's safe to load the mastracode coding widget on
-  // this app page. Only set by the owner route — guests never see it, and
-  // even if they spoofed it `/shmastra/api/chat` would refuse them anyway.
-  const tag = `<script>window.MASTRA_OWNER=true;</script>`;
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/<head([^>]*)>/i, `<head$1>${tag}`);
-  }
-  return tag + html;
-}
-
 function jsString(value: string): string {
   return JSON.stringify(value).replace(/</g, "\\u003c");
 }
