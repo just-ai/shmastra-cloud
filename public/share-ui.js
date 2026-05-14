@@ -97,7 +97,7 @@
       borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontFamily: FONT,
     }}, ["Revoke access"]);
     var statusLine = el("div", { style: { fontSize: "12px", color: "#666" } }, [
-      "Anyone signed in to Shmastra Cloud can open this link.",
+      "Anyone signed in can open this link.",
     ]);
 
     var sharedBlock = el("div", { style: { display: "none", flexDirection: "column", gap: "10px" } }, [
