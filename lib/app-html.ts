@@ -23,8 +23,6 @@ export async function fetchAppHtml(
   appName: string,
   ownerVirtualKey: string,
 ): Promise<MastraFetchResult> {
-  // New canonical path is /apps/<appName>; the sandbox-side handler is added
-  // alongside the existing /shmastra/apps/<appName> alias in this same change.
   const url = `${sandboxHost}/apps/${encodeURIComponent(appName)}`;
   const res = await fetch(url, {
     headers: { "x-mastra-auth-token": ownerVirtualKey },
