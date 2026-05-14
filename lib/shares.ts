@@ -3,12 +3,14 @@ import {
   AppShare,
   AppShareSession,
   db,
-  deleteShareRow,
+  deleteSessionsForShare,
   getSandbox,
   getShareByOwnerAndApp,
   getSessionByShareAndViewer,
   insertSessionRow,
   insertShareRow,
+  restoreShareRow,
+  softDeleteShareRow,
 } from "./db";
 import { connectToSandbox } from "./sandbox";
 
@@ -43,7 +45,12 @@ export function shareUrlPath(shareId: string): string {
 
 export async function createShare(ownerUserId: string, appName: string): Promise<AppShare> {
   const existing = await getShareByOwnerAndApp(ownerUserId, appName);
-  if (existing) return existing;
+  if (existing) {
+    // URL slug is stable across revoke→re-share: reuse the same row and
+    // just clear the soft-delete flag.
+    if (existing.revoked) return await restoreShareRow(existing.id, ownerUserId);
+    return existing;
+  }
 
   // Slug only has [A-Za-z0-9] so the appName-slug boundary is unambiguous.
   const id = `${appName}-${randomSlug()}`;
@@ -53,15 +60,19 @@ export async function createShare(ownerUserId: string, appName: string): Promise
     if ((err as { code?: string })?.code === "23505") {
       // Raced with another request — return the winner.
       const raced = await getShareByOwnerAndApp(ownerUserId, appName);
-      if (raced) return raced;
+      if (raced) {
+        if (raced.revoked) return await restoreShareRow(raced.id, ownerUserId);
+        return raced;
+      }
     }
     throw err;
   }
 }
 
 export async function revokeShare(shareId: string, ownerUserId: string): Promise<void> {
-  // Gather session ids BEFORE deleting (cascade strips them). Then wipe files
-  // from the sandbox (auto-resumes if paused), then drop the DB row.
+  // Soft-delete keeps the slug stable for future re-shares. Existing guests
+  // must lose access immediately, so wipe their sandbox session files and
+  // session rows before flipping `revoked`.
   const { data: sessions, error } = await db()
     .from("app_share_sessions")
     .select("id")
@@ -84,7 +95,8 @@ export async function revokeShare(shareId: string, ownerUserId: string): Promise
     }
   }
 
-  await deleteShareRow(shareId, ownerUserId);
+  await deleteSessionsForShare(shareId);
+  await softDeleteShareRow(shareId, ownerUserId);
 }
 
 export async function getOrCreateSession(

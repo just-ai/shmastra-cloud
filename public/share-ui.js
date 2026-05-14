@@ -46,108 +46,226 @@
     });
   }
 
-  var modal = null;
+  var popup = null;
+  var outsideHandler = null;
 
-  function closeModal() {
-    if (modal) { modal.remove(); modal = null; }
+  function closePopup() {
+    if (!popup) return;
+    popup.remove();
+    popup = null;
+    if (outsideHandler) {
+      document.removeEventListener("mousedown", outsideHandler, true);
+      outsideHandler = null;
+    }
   }
 
-  function openModal() {
-    if (modal) return;
-    var status = el("div", { style: { color: "#666", fontSize: "13px", marginTop: "8px" } }, ["Loading…"]);
+  function openPopup() {
+    if (popup) { closePopup(); return; }
+
+    var FONT = "system-ui,-apple-system,Segoe UI,sans-serif";
+
+    var intro = el("div", { style: {
+      fontSize: "13px", color: "#444", lineHeight: "1.45",
+    }}, ["Anyone signed in will be able to open this app via the link you generate."]);
+
+    var loading = el("div", { style: {
+      fontSize: "13px", color: "#888", padding: "4px 0",
+    }}, ["Loading…"]);
+
+    var shareBtn = el("button", { style: {
+      padding: "8px 14px", background: "#111", color: "#fff", border: "0",
+      borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontFamily: FONT,
+    }}, ["Share"]);
+
+    var introBlock = el("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } }, [
+      intro,
+      el("div", { style: { display: "flex", justifyContent: "flex-end" } }, [shareBtn]),
+    ]);
+
     var urlInput = el("input", { type: "text", readonly: "true", style: {
       width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: "6px",
-      fontFamily: "ui-monospace,Menlo,monospace", fontSize: "12px", background: "#fafafa",
+      fontFamily: "ui-monospace,Menlo,monospace", fontSize: "12px",
+      background: "#fafafa", color: "#111",
+      boxSizing: "border-box",
     }});
     var copyBtn = el("button", { style: {
       padding: "8px 12px", background: "#111", color: "#fff", border: "0", borderRadius: "6px",
-      cursor: "pointer", fontSize: "13px",
+      cursor: "pointer", fontSize: "13px", fontFamily: FONT,
     }}, ["Copy link"]);
     var revokeBtn = el("button", { style: {
       padding: "8px 12px", background: "#fff", color: "#b00", border: "1px solid #d99",
-      borderRadius: "6px", cursor: "pointer", fontSize: "13px",
+      borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontFamily: FONT,
     }}, ["Revoke access"]);
-    var closeBtn = el("button", { style: {
-      padding: "8px 12px", background: "transparent", color: "#666", border: "0",
-      cursor: "pointer", fontSize: "13px",
-    }}, ["Close"]);
+    var statusLine = el("div", { style: { fontSize: "12px", color: "#666" } }, [
+      "Anyone signed in to Shmastra Cloud can open this link.",
+    ]);
 
-    closeBtn.onclick = closeModal;
+    var sharedBlock = el("div", { style: { display: "none", flexDirection: "column", gap: "10px" } }, [
+      urlInput,
+      statusLine,
+      el("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" } }, [
+        revokeBtn,
+        copyBtn,
+      ]),
+    ]);
+
+    var errorLine = el("div", { style: {
+      fontSize: "12px", color: "#b00", marginTop: "8px", display: "none",
+    }}, []);
+
+    var card = el("div", { style: {
+      background: "#fff", color: "#111",
+      borderRadius: "10px", boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+      border: "1px solid #eee", padding: "16px", width: "320px", maxWidth: "92vw",
+      fontFamily: FONT,
+    }}, [
+      el("div", { style: { fontSize: "14px", fontWeight: "600", marginBottom: "10px" } }, ["Share this app"]),
+      loading,
+      introBlock,
+      sharedBlock,
+      errorLine,
+    ]);
 
     var currentShareId = null;
+    var inFlight = false;
 
-    function setShare(share) {
-      if (!share) {
-        status.textContent = "No active share. Create one to get a link.";
-        urlInput.value = "";
-        copyBtn.style.display = "none";
-        revokeBtn.style.display = "none";
-        return;
-      }
-      currentShareId = share.id;
-      var url = CLOUD_URL + share.url;
-      urlInput.value = url;
-      status.textContent = "Anyone signed in to Shmastra Cloud can open this link.";
-      copyBtn.style.display = "";
-      revokeBtn.style.display = "";
+    function showError(msg) {
+      errorLine.textContent = msg;
+      errorLine.style.display = "";
     }
+    function clearError() {
+      errorLine.textContent = "";
+      errorLine.style.display = "none";
+    }
+
+    function showIntro() {
+      currentShareId = null;
+      urlInput.value = "";
+      loading.style.display = "none";
+      introBlock.style.display = "flex";
+      sharedBlock.style.display = "none";
+      shareBtn.disabled = false;
+      shareBtn.textContent = "Share";
+    }
+
+    function showShared(share) {
+      currentShareId = share.id;
+      urlInput.value = CLOUD_URL + share.url;
+      loading.style.display = "none";
+      introBlock.style.display = "none";
+      sharedBlock.style.display = "flex";
+      copyBtn.disabled = false;
+      copyBtn.textContent = "Copy link";
+      revokeBtn.disabled = false;
+      revokeBtn.textContent = "Revoke access";
+    }
+
+    function showLoading() {
+      loading.style.display = "";
+      introBlock.style.display = "none";
+      sharedBlock.style.display = "none";
+    }
+
+    shareBtn.onclick = function () {
+      if (inFlight) return;
+      inFlight = true;
+      clearError();
+      shareBtn.disabled = true;
+      shareBtn.textContent = "Creating…";
+      api("POST", "/api/shares", { appName: APP_NAME })
+        .then(showShared)
+        .catch(function (e) {
+          showError("Failed: " + (e.message || e));
+          shareBtn.disabled = false;
+          shareBtn.textContent = "Share";
+        })
+        .finally(function () { inFlight = false; });
+    };
 
     copyBtn.onclick = function () {
       urlInput.select();
       navigator.clipboard.writeText(urlInput.value).then(function () {
         copyBtn.textContent = "Copied";
         setTimeout(function () { copyBtn.textContent = "Copy link"; }, 1500);
+      }).catch(function () {
+        showError("Copy failed — select and copy manually.");
       });
     };
 
     revokeBtn.onclick = function () {
-      if (!currentShareId) return;
-      if (!confirm("Revoke access for everyone? Existing guests will lose access immediately.")) return;
+      if (!currentShareId || inFlight) return;
+      inFlight = true;
+      clearError();
       revokeBtn.disabled = true;
       revokeBtn.textContent = "Revoking…";
       api("DELETE", "/api/shares?id=" + encodeURIComponent(currentShareId))
-        .then(function () { setShare(null); })
-        .catch(function (e) { status.textContent = "Failed: " + (e.message || e); })
-        .finally(function () { revokeBtn.disabled = false; revokeBtn.textContent = "Revoke access"; });
+        .then(function () { showIntro(); })
+        .catch(function (e) {
+          showError("Failed: " + (e.message || e));
+          revokeBtn.disabled = false;
+          revokeBtn.textContent = "Revoke access";
+        })
+        .finally(function () { inFlight = false; });
     };
 
-    var card = el("div", { style: {
-      background: "#fff", borderRadius: "10px", boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
-      padding: "20px", width: "440px", maxWidth: "92vw", fontFamily: "system-ui,sans-serif",
-    }}, [
-      el("div", { style: { fontSize: "16px", fontWeight: "600", marginBottom: "4px" } }, ["Share this app"]),
-      el("div", { style: { fontSize: "13px", color: "#666", marginBottom: "12px" } }, ["App: " + APP_NAME]),
-      urlInput,
-      status,
-      el("div", { style: { display: "flex", gap: "8px", marginTop: "14px", justifyContent: "flex-end" } },
-        [revokeBtn, copyBtn, closeBtn]),
-    ]);
-
-    modal = el("div", { style: {
-      position: "fixed", inset: "0", background: "rgba(0,0,0,0.35)", zIndex: "2147483647",
-      display: "flex", alignItems: "center", justifyContent: "center",
+    // Position popup directly below the Share button, centered.
+    var btnRect = container.getBoundingClientRect();
+    var btnCenter = btnRect.left + btnRect.width / 2;
+    popup = el("div", { style: {
+      position: "fixed",
+      top: (btnRect.bottom + 8) + "px",
+      left: btnCenter + "px",
+      transform: "translateX(-50%)",
+      zIndex: "2147483647",
     }}, [card]);
-    modal.onclick = function (e) { if (e.target === modal) closeModal(); };
-    document.body.appendChild(modal);
+    document.body.appendChild(popup);
 
-    copyBtn.style.display = "none";
-    revokeBtn.style.display = "none";
+    showLoading();
+    api("GET", "/api/shares?appName=" + encodeURIComponent(APP_NAME))
+      .then(function (resp) {
+        if (resp && resp.share) showShared(resp.share);
+        else showIntro();
+      })
+      .catch(function () { showIntro(); });
 
-    api("POST", "/api/shares", { appName: APP_NAME })
-      .then(setShare)
-      .catch(function (e) { status.textContent = "Failed: " + (e.message || e); });
+    outsideHandler = function (e) {
+      if (popup && !popup.contains(e.target) && !container.contains(e.target)) closePopup();
+    };
+    // Defer so the click that opened us doesn't immediately close it.
+    setTimeout(function () {
+      document.addEventListener("mousedown", outsideHandler, true);
+    }, 0);
   }
 
-  var button = el("button", { style: {
-    position: "fixed", top: "12px", right: "12px", zIndex: "2147483646",
-    padding: "8px 14px", background: "#111", color: "#fff", border: "0", borderRadius: "999px",
-    fontFamily: "system-ui,sans-serif", fontSize: "13px", cursor: "pointer",
-    boxShadow: "0 6px 16px rgba(0,0,0,0.18)",
+  var shareLabel = el("span", { style: {
+    padding: "8px 12px 8px 14px", cursor: "pointer", userSelect: "none",
   }}, ["Share"]);
-  button.onclick = openModal;
+  shareLabel.onclick = openPopup;
+
+  var closeIcon = el("span", { title: "Hide Share button", style: {
+    padding: "8px 12px 8px 8px", cursor: "pointer", userSelect: "none",
+    opacity: "0.7", fontSize: "16px", lineHeight: "1",
+    borderLeft: "1px solid rgba(255,255,255,0.18)", marginLeft: "2px",
+  }}, ["×"]);
+  closeIcon.onmouseenter = function () { closeIcon.style.opacity = "1"; };
+  closeIcon.onmouseleave = function () { closeIcon.style.opacity = "0.7"; };
+  closeIcon.onclick = function (e) {
+    e.stopPropagation();
+    closePopup();
+    container.remove();
+  };
+
+  var container = el("div", { style: {
+    position: "fixed", top: "12px", left: "50%", transform: "translateX(-50%)",
+    zIndex: "2147483646",
+    display: "inline-flex", alignItems: "center",
+    background: "#111", color: "#fff", borderRadius: "999px",
+    fontFamily: "system-ui,sans-serif", fontSize: "13px",
+    boxShadow: "0 6px 16px rgba(0,0,0,0.18)",
+  }}, [shareLabel, closeIcon]);
 
   function mount() {
-    if (document.body) document.body.appendChild(button);
+    if (document.body) document.body.appendChild(container);
     else document.addEventListener("DOMContentLoaded", mount);
   }
   mount();

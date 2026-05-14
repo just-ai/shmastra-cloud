@@ -8,6 +8,7 @@ create table if not exists app_shares (
   id              text primary key,                       -- '<app_name>-<slug>', matches /apps/shared/<id>
   owner_user_id   uuid not null references users(id) on delete cascade,
   app_name        text not null,
+  revoked         boolean not null default false,         -- soft-delete flag so the slug stays stable across revoke→re-share
   created_at      timestamptz not null default now(),
   unique (owner_user_id, app_name)
 );

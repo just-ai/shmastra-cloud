@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { withAuth } from "@workos-inc/authkit-nextjs";
+import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
 import { connectToSandbox, getSandboxForUser } from "@/lib/sandbox";
-import { getShareById, getUserById, getUserByWorkosId } from "@/lib/db";
+import { getShareById, getUserById, getUserByWorkosId, upsertUser } from "@/lib/db";
 import { getVirtualKey } from "@/lib/virtual-keys";
 import {
   fetchAppHtml,
@@ -15,24 +15,43 @@ function json(data: unknown, status: number): Response {
   return Response.json(data, { status });
 }
 
+function unavailable(request: NextRequest): Response {
+  // Build the redirect target from forwarded headers so tunnels/proxies
+  // (ngrok, Vercel preview, etc.) don't bounce the browser back to
+  // localhost:3000, which is what `request.url` resolves to when Next.js
+  // is listening behind a tunnel.
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const fallbackUrl = new URL(request.url);
+  const host = forwardedHost || request.headers.get("host") || fallbackUrl.host;
+  const proto = forwardedProto || fallbackUrl.protocol.replace(":", "");
+  return Response.redirect(`${proto}://${host}/apps/unavailable`, 307);
+}
+
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ shareId: string }> },
 ): Promise<Response> {
   const { shareId } = await params;
 
-  let session;
-  try {
-    session = await withAuth({ ensureSignedIn: true });
-  } catch {
-    return json({ error: "Unauthorized" }, 401);
+  const session = await withAuth();
+  if (!session.user) {
+    // Send the unauthenticated viewer through WorkOS hosted UI and bring
+    // them straight back to this share URL — no /workspace bootstrap on
+    // the way (they're a guest, they don't need a sandbox of their own).
+    const signInUrl = await getSignInUrl({ returnTo: `/apps/shared/${shareId}` });
+    return Response.redirect(signInUrl, 307);
   }
 
+  // First-time viewers won't have a `users` row yet (we usually create it
+  // in /workspace). Materialise it here so we have a stable internal id.
+  await upsertUser(session.user.id, session.user.email);
   const viewer = await getUserByWorkosId(session.user.id);
   if (!viewer) return json({ error: "User not found" }, 404);
 
   const share = await getShareById(shareId);
-  if (!share) return json({ error: "Not found" }, 404);
+  // Revoked shares look like 404s to viewers so the owner's intent isn't leaked.
+  if (!share || share.revoked) return unavailable(request);
 
   const ownerSandbox = await getSandboxForUser(share.owner_user_id);
   if (!ownerSandbox || !ownerSandbox.sandbox_id || !ownerSandbox.sandbox_host) {
@@ -65,10 +84,8 @@ export async function GET(
     ownerVk,
   );
   if (!fetched.ok || !fetched.html) {
-    return json(
-      { error: "App not found" },
-      fetched.status === 404 ? 404 : 502,
-    );
+    if (fetched.status === 404) return unavailable(request);
+    return json({ error: "App not found" }, 502);
   }
 
   // Swap embedded MASTRA_AUTH_TOKEN to the session token; the shmastra.js

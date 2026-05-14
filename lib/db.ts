@@ -199,6 +199,7 @@ export interface AppShare {
   owner_user_id: string;
   app_name: string;
   created_at: string;
+  revoked: boolean;
 }
 
 export interface AppShareSession {
@@ -254,12 +255,32 @@ export async function insertShareRow(row: {
   return data as AppShare;
 }
 
-export async function deleteShareRow(id: string, ownerUserId: string) {
+export async function softDeleteShareRow(id: string, ownerUserId: string) {
   const { error } = await db()
     .from("app_shares")
-    .delete()
+    .update({ revoked: true })
     .eq("id", id)
     .eq("owner_user_id", ownerUserId);
+  if (error) throw error;
+}
+
+export async function restoreShareRow(id: string, ownerUserId: string) {
+  const { data, error } = await db()
+    .from("app_shares")
+    .update({ revoked: false })
+    .eq("id", id)
+    .eq("owner_user_id", ownerUserId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AppShare;
+}
+
+export async function deleteSessionsForShare(shareId: string) {
+  const { error } = await db()
+    .from("app_share_sessions")
+    .delete()
+    .eq("share_id", shareId);
   if (error) throw error;
 }
 
