@@ -119,8 +119,8 @@ export async function writeSessionFile(
   const referrer = shareUrlPath(share.id);
   const payload = {
     sessionId: session.id,
-    sessionVk: session.session_vk,
-    viewerUserId: session.viewer_user_id,
+    sessionKey: session.session_vk,
+    userId: session.viewer_user_id,
     referrer,
   };
   await sandbox.files.makeDir(SESSIONS_DIR).catch(() => undefined);
