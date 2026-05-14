@@ -73,8 +73,8 @@ export async function GET(
 
   // Swap embedded MASTRA_AUTH_TOKEN to the session token; the shmastra.js
   // client just reads window.MASTRA_AUTH_TOKEN and forwards it as
-  // x-mastra-auth-token, so ShmastraAuth on the sandbox sees `st_*` and
-  // looks the session up by filename.
+  // `Authorization: Bearer <token>`, so ShmastraAuth on the sandbox sees
+  // `st_*` and looks the session up by filename.
   let html = replaceAuthToken(fetched.html, sessionRow.id);
   const baseHref = `${ownerSandbox.sandbox_host}/apps/${encodeURIComponent(share.app_name)}/`;
   html = injectBaseTag(html, baseHref);

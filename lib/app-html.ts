@@ -25,7 +25,7 @@ export async function fetchAppHtml(
 ): Promise<MastraFetchResult> {
   const url = `${sandboxHost}/apps/${encodeURIComponent(appName)}`;
   const res = await fetch(url, {
-    headers: { "x-mastra-auth-token": ownerVirtualKey },
+    headers: { Authorization: `Bearer ${ownerVirtualKey}` },
   });
   if (!res.ok) return { ok: false, status: res.status };
   return { ok: true, status: res.status, html: await res.text() };

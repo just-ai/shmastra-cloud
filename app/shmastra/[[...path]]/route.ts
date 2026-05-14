@@ -81,7 +81,7 @@ async function handleProxy(request: Request) {
   upstreamUrl.search = requestUrl.search;
 
   const headers = buildSandboxRequestHeaders(request);
-  headers.set("x-mastra-auth-token", getVirtualKey(user));
+  headers.set("Authorization", `Bearer ${getVirtualKey(user)}`);
   const body = await getForwardBody(request, request.method);
 
   let upstream;
