@@ -67,6 +67,12 @@ export function htmlResponse(html: string): Response {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
+      // Cross-origin fetches from this page go to the sandbox; the default
+      // (strict-origin-when-cross-origin) strips the path from Referer, but
+      // ShmastraAuth's scope check on the sandbox needs the full pathname to
+      // match `session.referrer = /apps/shared/<id>`. Send the full URL on
+      // HTTPS→HTTPS (which sandboxes always are), and nothing on downgrades.
+      "Referrer-Policy": "no-referrer-when-downgrade",
     },
   });
 }
