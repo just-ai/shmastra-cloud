@@ -1,15 +1,20 @@
 // Shared helpers for /apps/* HTML routes: fetch the rendered HTML from the
 // owner's sandbox, then mutate it before serving from cloud.com.
 //
-// Mastra's appIndexHandler already injects:
-//   <script>window.MASTRA_API_PREFIX=…;window.MASTRA_AUTH_TOKEN=…;</script>
+// Mastra's appIndexHandler injects:
+//   <script>window.MASTRA_API_PREFIX=…;</script>
 //   <script src="/shmastra/public/script/shmastra.js"></script>
+// It deliberately does NOT inject `window.MASTRA_AUTH_TOKEN` — that's the
+// renderer's job, so each viewer gets a token scoped to them (owner VK for
+// owners, per-session `st_*` for guests) and the sandbox HTML never leaks
+// the owner key if someone fetches it directly.
+//
 // We post-process that HTML to:
 //   1. Insert a <base href="<sandbox>/apps/<name>/"> so all relative AND
 //      root-relative URLs (scripts, /api/*, fetch) target the sandbox origin
 //      directly — the browser never re-routes them through cloud.com.
-//   2. Optionally swap the embedded MASTRA_AUTH_TOKEN value (guest flow uses
-//      a session token instead of the owner virtual key).
+//   2. Insert a `window.MASTRA_AUTH_TOKEN` script BEFORE shmastra.js runs so
+//      its fetch/XHR patch picks up the per-viewer token.
 //   3. Optionally append an owner-only share-overlay script.
 
 export interface MastraFetchResult {
@@ -40,15 +45,20 @@ export function injectBaseTag(html: string, baseHref: string): string {
   return tag + html;
 }
 
-export function replaceAuthToken(html: string, newToken: string): string {
-  // Mastra's inject is:
-  //   window.MASTRA_AUTH_TOKEN="<owner-vk>";
-  // The owner VK is also serialized via JSON.stringify, so the value is
-  // a double-quoted string. We swap the literal.
-  return html.replace(
-    /window\.MASTRA_AUTH_TOKEN\s*=\s*"[^"]*"/,
-    `window.MASTRA_AUTH_TOKEN=${JSON.stringify(newToken)}`,
-  );
+export function injectTokenScript(html: string, token: string): string {
+  // Per-viewer auth token. Mastra never bakes one in; this script must run
+  // before shmastra.js so its fetch/XHR patch reads the right value.
+  // Place it immediately after `<head>` — inline (no URL resolution),
+  // so it doesn't matter whether `<base href>` has been parsed yet.
+  const tag = `<script>window.MASTRA_AUTH_TOKEN=${jsString(token)};</script>`;
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1>${tag}`);
+  }
+  return tag + html;
+}
+
+function jsString(value: string): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
 }
 
 export function appendToHead(html: string, snippet: string): string {

@@ -7,7 +7,7 @@ import {
   fetchAppHtml,
   htmlResponse,
   injectBaseTag,
-  replaceAuthToken,
+  injectTokenScript,
 } from "@/lib/app-html";
 import { getOrCreateSession, writeSessionFile } from "@/lib/shares";
 
@@ -88,11 +88,11 @@ export async function GET(
     return json({ error: "App not found" }, 502);
   }
 
-  // Swap embedded MASTRA_AUTH_TOKEN to the session token; the shmastra.js
-  // client just reads window.MASTRA_AUTH_TOKEN and forwards it as
-  // `Authorization: Bearer <token>`, so ShmastraAuth on the sandbox sees
-  // `st_*` and looks the session up by filename.
-  let html = replaceAuthToken(fetched.html, sessionRow.id);
+  // Inject the per-session token (`st_*`) so shmastra.js forwards it as
+  // `Authorization: Bearer st_*`; ShmastraAuth on the sandbox then looks
+  // the session up by filename in `.sessions/`. Owner VK is never exposed
+  // to the guest browser.
+  let html = injectTokenScript(fetched.html, sessionRow.id);
   const baseHref = `${ownerSandbox.sandbox_host}/apps/${encodeURIComponent(share.app_name)}/`;
   html = injectBaseTag(html, baseHref);
 

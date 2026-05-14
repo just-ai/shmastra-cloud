@@ -9,6 +9,7 @@ import {
   fetchAppHtml,
   htmlResponse,
   injectBaseTag,
+  injectTokenScript,
 } from "@/lib/app-html";
 import { getShareUiScript } from "@/lib/share-ui";
 
@@ -48,7 +49,8 @@ export async function GET(
   }
 
   const baseHref = `${sandbox.sandbox_host}/apps/${encodeURIComponent(appName)}/`;
-  let html = injectBaseTag(fetched.html, baseHref);
+  let html = injectTokenScript(fetched.html, virtualKey);
+  html = injectBaseTag(html, baseHref);
   html = appendToHead(html, getShareUiScript(appName, getAppUrl()));
 
   return htmlResponse(html);
