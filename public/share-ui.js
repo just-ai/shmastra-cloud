@@ -66,7 +66,7 @@
 
     var intro = el("div", { style: {
       fontSize: "13px", color: "#444", lineHeight: "1.45",
-    }}, ["Anyone signed in will be able to open this app via the link you generate."]);
+    }}, ["Any authorized user can open this app via the link you generate."]);
 
     var loading = el("div", { style: {
       fontSize: "13px", color: "#888", padding: "4px 0",
@@ -97,7 +97,7 @@
       borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontFamily: FONT,
     }}, ["Revoke access"]);
     var statusLine = el("div", { style: { fontSize: "12px", color: "#666" } }, [
-      "Anyone signed in can open this link.",
+      "Any authorized user can open this link.",
     ]);
 
     var sharedBlock = el("div", { style: { display: "none", flexDirection: "column", gap: "10px" } }, [
