@@ -59,10 +59,12 @@ async function handler(request: NextRequest): Promise<Response> {
   const baseUrl = PROVIDER_URLS[provider];
   if (!baseUrl) return json({ error: "Unknown provider" }, 400);
 
-  // Extract virtual key from any header value
+  // Extract virtual key from any header value. Accepts both owner VKs (vk_*)
+  // and session VKs (sk_*) — the latter are minted per (share, viewer) and
+  // resolved through app_share_sessions to the owner account for billing.
   let virtualKey = "";
   for (const value of request.headers.values()) {
-    const vkMatch = value.match(/vk_[A-Za-z0-9_-]+/);
+    const vkMatch = value.match(/(?:vk|sk)_[A-Za-z0-9_-]+/);
     if (vkMatch) {
       virtualKey = vkMatch[0];
       break;

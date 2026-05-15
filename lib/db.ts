@@ -191,3 +191,152 @@ export async function claimSandboxRetry(userId: string) {
   if (error && error.code !== "PGRST116") throw error;
   return data;
 }
+
+// --- App shares ---
+
+export interface AppShare {
+  id: string;
+  owner_user_id: string;
+  app_name: string;
+  created_at: string;
+  revoked: boolean;
+}
+
+export interface AppShareSession {
+  id: string;
+  share_id: string;
+  viewer_user_id: string;
+  session_vk: string;
+  created_at: string;
+}
+
+export async function getShareById(id: string) {
+  const { data, error } = await db()
+    .from("app_shares")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error && error.code !== "PGRST116") throw error;
+  return data as AppShare | null;
+}
+
+export async function getShareByOwnerAndApp(ownerUserId: string, appName: string) {
+  const { data, error } = await db()
+    .from("app_shares")
+    .select("*")
+    .eq("owner_user_id", ownerUserId)
+    .eq("app_name", appName)
+    .maybeSingle();
+  if (error && error.code !== "PGRST116") throw error;
+  return data as AppShare | null;
+}
+
+export async function listSharesByOwner(ownerUserId: string) {
+  const { data, error } = await db()
+    .from("app_shares")
+    .select("*")
+    .eq("owner_user_id", ownerUserId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as AppShare[];
+}
+
+export async function insertShareRow(row: {
+  id: string;
+  owner_user_id: string;
+  app_name: string;
+}) {
+  const { data, error } = await db()
+    .from("app_shares")
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AppShare;
+}
+
+export async function softDeleteShareRow(id: string, ownerUserId: string) {
+  const { error } = await db()
+    .from("app_shares")
+    .update({ revoked: true })
+    .eq("id", id)
+    .eq("owner_user_id", ownerUserId);
+  if (error) throw error;
+}
+
+export async function restoreShareRow(id: string, ownerUserId: string) {
+  const { data, error } = await db()
+    .from("app_shares")
+    .update({ revoked: false })
+    .eq("id", id)
+    .eq("owner_user_id", ownerUserId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AppShare;
+}
+
+export async function deleteSessionsForShare(shareId: string) {
+  const { error } = await db()
+    .from("app_share_sessions")
+    .delete()
+    .eq("share_id", shareId);
+  if (error) throw error;
+}
+
+export async function getSessionByShareAndViewer(
+  shareId: string,
+  viewerUserId: string,
+) {
+  const { data, error } = await db()
+    .from("app_share_sessions")
+    .select("*")
+    .eq("share_id", shareId)
+    .eq("viewer_user_id", viewerUserId)
+    .maybeSingle();
+  if (error && error.code !== "PGRST116") throw error;
+  return data as AppShareSession | null;
+}
+
+export async function insertSessionRow(row: {
+  id: string;
+  share_id: string;
+  viewer_user_id: string;
+  session_vk: string;
+}) {
+  const { data, error } = await db()
+    .from("app_share_sessions")
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AppShareSession;
+}
+
+export async function listSessionsForOwner(ownerUserId: string) {
+  const { data, error } = await db()
+    .from("app_share_sessions")
+    .select("id, share:app_shares!inner(owner_user_id)")
+    .eq("share.owner_user_id", ownerUserId);
+  if (error) throw error;
+  return (data ?? []) as { id: string }[];
+}
+
+export async function getSessionBySessionVk(sessionVk: string) {
+  const { data, error } = await db()
+    .from("app_share_sessions")
+    .select("id, share_id, viewer_user_id, share:app_shares!inner(owner_user_id)")
+    .eq("session_vk", sessionVk)
+    .single();
+  if (error && error.code !== "PGRST116") throw error;
+  if (!data) return null;
+  const share = (data as { share: { owner_user_id: string } | { owner_user_id: string }[] }).share;
+  const ownerUserId = Array.isArray(share) ? share[0]?.owner_user_id : share?.owner_user_id;
+  if (!ownerUserId) return null;
+  return {
+    sessionId: data.id as string,
+    shareId: data.share_id as string,
+    viewerUserId: data.viewer_user_id as string,
+    ownerUserId,
+  };
+}
