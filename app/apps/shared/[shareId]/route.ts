@@ -8,6 +8,7 @@ import {
   htmlResponse,
   injectBaseTag,
   injectTokenScript,
+  unavailableHtmlResponse,
 } from "@/lib/app-html";
 import { getOrCreateSession, writeSessionFile } from "@/lib/shares";
 
@@ -15,21 +16,8 @@ function json(data: unknown, status: number): Response {
   return Response.json(data, { status });
 }
 
-function unavailable(request: NextRequest): Response {
-  // Build the redirect target from forwarded headers so tunnels/proxies
-  // (ngrok, Vercel preview, etc.) don't bounce the browser back to
-  // localhost:3000, which is what `request.url` resolves to when Next.js
-  // is listening behind a tunnel.
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  const fallbackUrl = new URL(request.url);
-  const host = forwardedHost || request.headers.get("host") || fallbackUrl.host;
-  const proto = forwardedProto || fallbackUrl.protocol.replace(":", "");
-  return Response.redirect(`${proto}://${host}/apps/unavailable`, 307);
-}
-
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ shareId: string }> },
 ): Promise<Response> {
   const { shareId } = await params;
@@ -51,7 +39,7 @@ export async function GET(
 
   const share = await getShareById(shareId);
   // Revoked shares look like 404s to viewers so the owner's intent isn't leaked.
-  if (!share || share.revoked) return unavailable(request);
+  if (!share || share.revoked) return unavailableHtmlResponse();
 
   const ownerSandbox = await getSandboxForUser(share.owner_user_id);
   if (!ownerSandbox || !ownerSandbox.sandbox_id || !ownerSandbox.sandbox_host) {
@@ -84,7 +72,7 @@ export async function GET(
     ownerVk,
   );
   if (!fetched.ok || !fetched.html) {
-    if (fetched.status === 404) return unavailable(request);
+    if (fetched.status === 404) return unavailableHtmlResponse();
     return json({ error: "App not found" }, 502);
   }
 
