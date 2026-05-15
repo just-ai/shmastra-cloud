@@ -18,7 +18,7 @@ function EmailCodeSignInPlaceholder() {
   );
 }
 
-export function EmailCodeSignInShell() {
+export function EmailCodeSignInShell({ returnTo }: { returnTo?: string | null }) {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -29,5 +29,5 @@ export function EmailCodeSignInShell() {
     return <EmailCodeSignInPlaceholder />;
   }
 
-  return <EmailCodeSignIn />;
+  return <EmailCodeSignIn returnTo={returnTo ?? null} />;
 }

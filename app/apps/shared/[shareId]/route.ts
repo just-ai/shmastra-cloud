@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
+import { withAuth } from "@workos-inc/authkit-nextjs";
 import { connectToSandbox, getSandboxForUser } from "@/lib/sandbox";
 import { getShareById, getUserById, getUserByWorkosId, upsertUser } from "@/lib/db";
 import { getVirtualKey } from "@/lib/virtual-keys";
@@ -11,24 +11,25 @@ import {
   unavailableHtmlResponse,
 } from "@/lib/app-html";
 import { getOrCreateSession, writeSessionFile } from "@/lib/shares";
+import { buildLoginUrl } from "@/lib/return-to";
 
 function json(data: unknown, status: number): Response {
   return Response.json(data, { status });
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ shareId: string }> },
 ): Promise<Response> {
   const { shareId } = await params;
 
   const session = await withAuth();
   if (!session.user) {
-    // Send the unauthenticated viewer through WorkOS hosted UI and bring
-    // them straight back to this share URL — no /workspace bootstrap on
-    // the way (they're a guest, they don't need a sandbox of their own).
-    const signInUrl = await getSignInUrl({ returnTo: `/apps/shared/${shareId}` });
-    return Response.redirect(signInUrl, 307);
+    // Bounce through our own magic-code sign-in page, then back to the
+    // share URL — no /workspace bootstrap on the way (they're a guest,
+    // they don't need a sandbox of their own).
+    const target = `/apps/shared/${encodeURIComponent(shareId)}`;
+    return Response.redirect(buildLoginUrl(request, target), 307);
   }
 
   // First-time viewers won't have a `users` row yet (we usually create it

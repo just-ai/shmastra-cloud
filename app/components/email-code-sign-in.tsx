@@ -31,7 +31,7 @@ function SubmitButton({
   );
 }
 
-export function EmailCodeSignIn() {
+export function EmailCodeSignIn({ returnTo }: { returnTo: string | null }) {
   const [sendState, sendAction] = useActionState(
     requestMagicCode,
     initialEmailCodeActionState,
@@ -79,6 +79,7 @@ export function EmailCodeSignIn() {
 
       {step === "email" ? (
         <form action={sendAction} className="mt-7 space-y-3">
+          {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
           <div className="space-y-2">
             <label
               htmlFor="magic-auth-email"
@@ -119,6 +120,7 @@ export function EmailCodeSignIn() {
 
           <form action={verifyAction} className="space-y-3">
             <input type="hidden" name="email" value={email} />
+            {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
             <div className="space-y-2">
               <label
                 htmlFor="magic-auth-code"
@@ -160,6 +162,7 @@ export function EmailCodeSignIn() {
           <div className="flex items-center justify-between gap-3 text-[11px] text-[var(--text-tertiary)]">
             <form action={sendAction}>
               <input type="hidden" name="email" value={email} />
+              {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
               <SubmitButton
                 pendingLabel="Resending..."
                 className="inline-flex h-8 items-center justify-center rounded-md border border-[var(--panel-border)] bg-transparent px-3 text-[11px] font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"

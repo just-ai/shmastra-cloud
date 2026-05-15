@@ -7,6 +7,7 @@ import {
   saveSession,
 } from "@workos-inc/authkit-nextjs";
 import { isAllowedWorkosOrganization } from "@/lib/workos-organization";
+import { sanitizeReturnTo } from "@/lib/return-to";
 
 export type EmailCodeActionState = {
   email: string;
@@ -104,6 +105,10 @@ export async function verifyMagicCode(
   const email =
     normalizeEmail(formData.get("email")) || normalizeEmail(previousState.email);
   const code = normalizeCode(formData.get("code"));
+  const returnToRaw = formData.get("returnTo");
+  const returnTo = sanitizeReturnTo(
+    typeof returnToRaw === "string" ? returnToRaw : null,
+  );
 
   if (!isValidEmail(email)) {
     return {
@@ -155,5 +160,5 @@ export async function verifyMagicCode(
     });
   }
 
-  redirect("/workspace");
+  redirect(returnTo ?? "/workspace");
 }

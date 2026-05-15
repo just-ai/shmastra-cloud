@@ -4,6 +4,7 @@ import { getSandboxForUser, ensureSandboxForUser } from "@/lib/sandbox";
 import { getUserByWorkosId } from "@/lib/db";
 import { getVirtualKey } from "@/lib/virtual-keys";
 import { getAppUrl } from "@/lib/app-url";
+import { buildLoginUrl } from "@/lib/return-to";
 import {
   appendToHead,
   fetchAppHtml,
@@ -18,16 +19,16 @@ function json(data: unknown, status: number): Response {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ appName: string }> },
 ): Promise<Response> {
   const { appName } = await params;
 
-  let session;
-  try {
-    session = await withAuth({ ensureSignedIn: true });
-  } catch {
-    return json({ error: "Unauthorized" }, 401);
+  const session = await withAuth();
+  if (!session.user) {
+    // Bounce through our own magic-code sign-in page, then back here.
+    const target = `/apps/${encodeURIComponent(appName)}`;
+    return Response.redirect(buildLoginUrl(request, target), 307);
   }
 
   const user = await getUserByWorkosId(session.user.id);

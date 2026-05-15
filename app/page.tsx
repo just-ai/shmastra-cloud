@@ -1,12 +1,18 @@
 import { redirect } from "next/navigation";
 import { withAuth } from "@workos-inc/authkit-nextjs";
+import { sanitizeReturnTo } from "@/lib/return-to";
 import { EmailCodeSignInShell } from "./components/email-code-sign-in-shell";
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>;
+}) {
   const { user } = await withAuth();
+  const returnTo = sanitizeReturnTo((await searchParams).returnTo);
 
   if (user) {
-    redirect("/workspace");
+    redirect(returnTo ?? "/workspace");
   }
 
   return (
@@ -33,7 +39,7 @@ export default async function Home() {
           </div>
 
           <div className="w-full md:justify-self-end">
-            <EmailCodeSignInShell />
+            <EmailCodeSignInShell returnTo={returnTo} />
           </div>
         </section>
       </div>
