@@ -5,7 +5,17 @@ export interface User {
   workos_id: string;
   email: string;
   virtual_key: string | null;
+  project_token: string;
   created_at: string;
+}
+
+export interface Project {
+  user_id: string;
+  project_id: number;
+  git_url: string;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Sandbox {
@@ -36,11 +46,18 @@ export function db() {
 
 // --- Users ---
 
-function generateVirtualKey(userId: string): string {
-  const buf = new Uint8Array(12);
+function randomHex(bytes: number): string {
+  const buf = new Uint8Array(bytes);
   crypto.getRandomValues(buf);
-  const hex = Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
-  return `vk_${userId}_${hex}`;
+  return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function generateVirtualKey(userId: string): string {
+  return `vk_${userId}_${randomHex(12)}`;
+}
+
+export function generateProjectToken(userId: string): string {
+  return `pjt_${userId}_${randomHex(16)}`;
 }
 
 export async function upsertUser(workosId: string, email: string) {
@@ -57,6 +74,7 @@ export async function upsertUser(workosId: string, email: string) {
       workos_id: workosId,
       email,
       virtual_key: generateVirtualKey(id),
+      project_token: generateProjectToken(id),
     })
     .select("id")
     .single();
@@ -89,6 +107,54 @@ export async function getUserByWorkosId(workosId: string) {
     .single();
   if (error && error.code !== "PGRST116") throw error;
   return data;
+}
+
+// --- Projects ---
+
+export async function getProject(userId: string): Promise<Project | null> {
+  const { data, error } = await db()
+    .from("projects")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle<Project>();
+  if (error) throw error;
+  return data;
+}
+
+export async function upsertProject(row: {
+  user_id: string;
+  project_id: number;
+  git_url: string;
+}): Promise<{ row: Project; inserted: boolean }> {
+  // Insert; on user_id collision (a concurrent caller won the race), fetch
+  // the winning row and report `inserted: false` so caller can clean up.
+  const { data, error } = await db()
+    .from("projects")
+    .insert(row)
+    .select()
+    .maybeSingle<Project>();
+  if (!error && data) return { row: data, inserted: true };
+  if (error && error.code !== "23505") throw error;
+
+  const winner = await getProject(row.user_id);
+  if (!winner) throw new Error("Project insert raced but no winning row found");
+  return { row: winner, inserted: false };
+}
+
+export async function markProjectError(userId: string, message: string): Promise<void> {
+  const { error } = await db()
+    .from("projects")
+    .update({ error: message, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
+export async function touchProject(userId: string): Promise<void> {
+  const { error } = await db()
+    .from("projects")
+    .update({ updated_at: new Date().toISOString(), error: null })
+    .eq("user_id", userId);
+  if (error) throw error;
 }
 
 // --- Sandboxes ---

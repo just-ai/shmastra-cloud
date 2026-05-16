@@ -56,6 +56,16 @@ export async function updateSandbox(
 
   const ctx: PhaseCtx = { sandbox, sandboxId, log, signal, state: {} };
 
+  // Pause project-watcher so its `git add -A && git commit` doesn't race
+  // with fetchPhase's same commands, and so its push to `project/main`
+  // doesn't interleave with the control push we do in project-sync at the
+  // end. `|| true` handles the case where the watcher isn't installed yet
+  // (old sandbox before the back-fill patch runs).
+  await run(sandbox, `pm2 stop project-watcher 2>/dev/null || true`, log, {
+    throwOnError: false,
+    signal,
+  });
+
   let currentPhase: UpdatePhase | null = null;
   try {
     for (const { name, fn } of UPDATE_PIPELINE) {
@@ -162,6 +172,16 @@ export async function updateSandbox(
       await cleanup(sandbox, log);
     } catch (cleanupErr: any) {
       log(`✗ Worktree cleanup failed: ${cleanupErr.message}`);
+    }
+    // Resume project-watcher regardless of outcome. After a successful
+    // pipeline it picks up where it left off; after a rollback it
+    // syncs whatever state the rollback restored.
+    try {
+      await run(sandbox, `pm2 start project-watcher 2>/dev/null || true`, log, {
+        throwOnError: false,
+      });
+    } catch (resumeErr: any) {
+      log(`✗ project-watcher resume failed: ${resumeErr.message}`);
     }
   }
 }

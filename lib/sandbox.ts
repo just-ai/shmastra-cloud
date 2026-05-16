@@ -12,6 +12,8 @@ import { writeMcpConfig } from "./mcp-config";
 import { writeSkills } from "./skill-injection";
 import { MASTRA_API_PREFIX } from "./mastra-constants";
 import { getAppUrl } from "./app-url";
+import { ensureProjectForUser, markError as markProjectError } from "./projects";
+import { buildProxyUrl, setupProjectRemote } from "./project-bootstrap";
 
 const TEMPLATE = "shmastra";
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -131,6 +133,28 @@ async function provisionSandbox(userId: string) {
     if (!user) throw new Error(`User ${userId} not found`);
     const virtualKey = getVirtualKey(user);
 
+    // Project repo lives outside the sandbox lifecycle: same user always
+    // gets the same provider repo. Hard-fail on provider error — running
+    // without persistent backup is worse than not running. When the
+    // provider token is not configured at all, the feature is implicitly
+    // off and the sandbox creates without sync.
+    const syncEnabled = !!process.env.GITLAB_SERVICE_TOKEN;
+    let projectExisted = false;
+    let projectSetup: { token: string; proxyUrl: string } | null = null;
+    if (syncEnabled) {
+      if (!user.project_token) {
+        throw new Error(
+          `User ${userId} has no project_token — run supabase migration 003 first`,
+        );
+      }
+      const { created } = await ensureProjectForUser(userId);
+      projectExisted = !created;
+      projectSetup = {
+        token: user.project_token,
+        proxyUrl: buildProxyUrl(appUrl, user.project_token),
+      };
+    }
+
     const sandbox = await Sandbox.create(TEMPLATE, {
       timeoutMs: SANDBOX_TIMEOUT_MS,
       lifecycle: {
@@ -141,6 +165,7 @@ async function provisionSandbox(userId: string) {
         MASTRA_STUDIO_BASE_PATH: "/studio",
         MASTRA_API_PREFIX,
         MASTRA_AUTH_TOKEN: virtualKey,
+        ...(projectSetup ? { PROJECT_TOKEN: projectSetup.token } : {}),
         CORS_ORIGIN: appUrl,
         USER_ID: userId,
         OPENAI_API_KEY: virtualKey,
@@ -187,6 +212,20 @@ async function provisionSandbox(userId: string) {
       await writeSkills(sandbox);
     } catch (err) {
       console.error(`Failed to write skills for sandbox ${sandbox.sandboxId}:`, err);
+    }
+
+    // Sync is mandatory whenever the provider is configured: without the
+    // project remote wired up and (if the user has prior work) restored,
+    // "ready" would mean a sandbox silently diverging from the user's
+    // saved state. Fail loudly instead.
+    if (projectSetup) {
+      try {
+        await setupProjectRemote(sandbox, projectSetup.proxyUrl, projectExisted);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        void markProjectError(userId, message).catch(() => {});
+        throw new Error(`Project remote setup failed: ${message}`);
+      }
     }
 
     await updateSandbox(userId, {

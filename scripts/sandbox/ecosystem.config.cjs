@@ -54,5 +54,21 @@ module.exports = {
       merge_logs: true,
       env: daemonEnv,
     },
+    {
+      // Auto-commits and pushes the user's edits to their project repo via
+      // the cloud's git-proxy. Paused by update-pipeline via `pm2 stop`
+      // and resumed in `finally`; see manage/update/updater.mts.
+      name: "project-watcher",
+      script: "/home/user/project-watcher.cjs",
+      cwd: "/home/user/shmastra",
+      autorestart: true,
+      max_restarts: 5,
+      min_uptime: 30000,
+      restart_delay: 30000,
+      out_file: "/home/user/shmastra/.logs/project-watcher.log",
+      error_file: "/home/user/shmastra/.logs/project-watcher.log",
+      merge_logs: true,
+      env: daemonEnv,
+    },
   ],
 };

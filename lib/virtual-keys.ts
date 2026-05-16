@@ -36,3 +36,19 @@ export function getVirtualKey(user: { id: string; virtual_key?: string | null })
   if (user.virtual_key) return user.virtual_key;
   throw new Error(`User ${user.id} has no virtual key`);
 }
+
+/**
+ * Resolve a per-user PROJECT_TOKEN (format `pjt_<userId>_<hex>`) to its
+ * owning user id. Used by the git-proxy to authenticate the sandbox before
+ * forwarding to the provider.
+ */
+export async function resolveProjectToken(token: string): Promise<{ userId: string } | null> {
+  if (!token.startsWith("pjt_")) return null;
+  const { data, error } = await db()
+    .from("users")
+    .select("id")
+    .eq("project_token", token)
+    .maybeSingle();
+  if (error || !data) return null;
+  return { userId: data.id as string };
+}
