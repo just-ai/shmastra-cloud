@@ -25,10 +25,12 @@ npx tsx manage/index.mts --agent <id>      # Interactive agent CLI for sandbox
 
 ```
 Browser → Next.js middleware (WorkOS auth + org check)
-  ├── /studio/*          → static Mastra Studio assets
-  ├── /api/mastra/*      → proxy to user's E2B sandbox (port 4111)
-  ├── /api/gateway/*     → AI provider gateway (Edge, virtual key → real key swap)
-  └── /workspace         → sandbox provisioning UI
+  ├── /studio/*               → static Mastra Studio assets
+  ├── /api/mastra/*           → proxy to user's E2B sandbox (port 4111)
+  ├── /api/gateway/*          → AI provider gateway (Edge, virtual key → real key swap)
+  ├── /apps/[appName]         → owner app view (fetches HTML from sandbox, injects share overlay)
+  ├── /apps/shared/[shareId]  → guest share view (materializes session in sandbox, serves app HTML)
+  └── /workspace              → sandbox provisioning UI
 ```
 
 ### Sandbox lifecycle
@@ -40,16 +42,17 @@ Browser → Next.js middleware (WorkOS auth + org check)
 5. Writes MCP config and bundled skills into sandbox so the coding agent gets cloud-specific tools (scheduler, etc.)
 6. Reads `/home/user/.template-version` from the new sandbox to initialise the `version` field (for patch-skip tracking)
 7. After 10min idle → sandbox pauses; auto-resumes on the next request
+8. On provisioning failure → sandbox enters `error` state; automatically retried on the next user request via `claimSandboxRetry`
 
 ### Virtual key system
 
-Sandboxes never see real API keys. Instead they get `vk_<userId>_<hex>` tokens. The Edge gateway (`/api/gateway/*`) resolves virtual keys back to real keys from env vars before proxying to OpenAI/Anthropic/Google/Composio.
+Sandboxes never see real API keys. Instead they get `vk_<userId>_<hex>` tokens (owner) or `sk_<viewerUserId>_<hex>` tokens (guest share sessions). The Edge gateway (`/api/gateway/*`) resolves both token types back to real keys from env vars before proxying to OpenAI/Anthropic/Google/Composio.
 
 ### Database (Supabase)
 
-Tables: `users` (includes `virtual_key` column), `sandboxes` (1:1 with users).
+Tables: `users` (includes `virtual_key` column), `sandboxes` (1:1 with users), `app_shares`, `app_share_sessions`.
 View: `user_sandboxes` (join for admin queries).
-Migrations in `supabase/migrations/`.
+Migrations in `supabase/migrations/` (all schema consolidated in `001_init.sql`).
 
 ### Key files
 
@@ -59,9 +62,14 @@ Migrations in `supabase/migrations/`.
 - `lib/skill-injection.ts` — writes bundled skills from `lib/skills/` into `~/.mastracode/skills/` in the sandbox at provision time; idempotent overwrite so newer cloud builds ship updated skill text without needing a sandbox update
 - `lib/skills/` — bundled skill directories shipped to every sandbox (currently: `shmastra-scheduler`)
 - `lib/db.ts` — all Supabase queries
-- `lib/virtual-keys.ts` — virtual key generation/resolution
+- `lib/virtual-keys.ts` — virtual key generation/resolution; resolves both owner VKs (`vk_*`) and session VKs (`sk_*`); returns owner ID for billing plus session metadata
+- `lib/shares.ts` — share creation/revocation; mints `st_*` (session auth token) and `sk_*` (session virtual key) per guest viewer; `writeSessionFile` writes session JSON into sandbox `.sessions/` dir on first guest access
+- `lib/app-html.ts` — fetch rendered HTML from sandbox, inject `<base href>`, swap auth tokens, append scripts; central helper for all app HTML responses
+- `lib/return-to.ts` — `sanitizeReturnTo` (validates same-origin paths, blocks open redirects) and `buildLoginUrl`; used by app/share routes to bounce unauthenticated users through `/?returnTo=<target>`
 - `app/api/mastra/[...path]/route.ts` — sandbox proxy
 - `app/api/gateway/[...path]/route.ts` — AI gateway (Edge runtime)
+- `app/apps/[appName]/route.ts` — owner app view with share overlay UI injected
+- `app/apps/shared/[shareId]/route.ts` — guest share view; materializes session in sandbox `.sessions/` dir on first visit
 - `app/workspace/page.tsx` — server-side sandbox bootstrap
 - `manage/` — sandbox manager (update, agent chat, web UI)
   - `index.mts` — CLI entry point (update, --serve, --agent)
@@ -95,7 +103,7 @@ Migrations in `supabase/migrations/`.
 
 ### Scheduler
 
-Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/scheduler.ts`). Schedules live in Supabase and are executed by pg_cron. Migration: `supabase/migrations/006_schedules.sql`.
+Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/scheduler.ts`). Schedules live in Supabase and are executed by pg_cron. All schema lives in `supabase/migrations/001_init.sql`.
 
 - **Fire path**: pg_cron → `scheduler_trigger(sid)` → `net.http_post` (fire-and-forget) → `/api/schedules/internal/fire?sid=...` (Next.js). The handler wakes the sandbox (`connectToSandbox` → blocks on `/health`), then does two Mastra calls via `@mastra/client-js`: `workflow.createRun()` (gets a Mastra-allocated runId) → `run.start({ inputData })` (kicks execution, returns fast). Result is recorded in `schedule_runs` (status `pending` on success, `failed` on create-run/start error).
 - **URL discovery**: `schedules.public_url` is a snapshot of `getAppUrl()` at creation time; `scheduler_trigger` reads it at fire time. No GUCs, no shared token — `sid` (UUIDv4) is the capability.
@@ -109,6 +117,8 @@ Users schedule Mastra workflows on cron via MCP tools (see `lib/mcp/tools/schedu
 The **migrate** phase handles DuckDB schema migrations: stops pm2 to flush the WAL, snapshots `.duckdb` files into the worktree, runs the migration script (using new-version node_modules), then swaps migrated files back into MAIN_DIR. pm2 stays down through apply/patch until the restart phase.
 
 On any phase failure the updater rolls back: git reset to the pre-update HEAD, restores `.duckdb` from backup (if migration ran), reinstalls deps on the rolled-back tree, then revives pm2 on the old code.
+
+MCP config and bundled skills are re-synced unconditionally on every sandbox update (apply phase), so the coding agent always gets the latest cloud configuration.
 
 **Agent mode** (`--agent <id>`): Interactive CLI chat with a Mastra agent connected to a sandbox. The agent can execute commands, read/edit files, manage processes. Web UI also supports chat via slide-out panel.
 
@@ -129,3 +139,5 @@ Required in `.env.local`:
 - Studio is a Vite-built static bundle; `build:studio` must run before `next build`
 - The `shmastra` E2B template must be built once via `template:build` before sandboxes can be created
 - Sandbox health check endpoint: `GET /health` on port 4111
+- When writing patch scripts that configure pm2 module settings (e.g. logrotate), write `~/.pm2/module_conf.json` directly — do NOT use `pm2 set`, as each call forks a Node process and can OOM-kill memory-tight resumed sandboxes
+- Unauthenticated requests to `/apps/*` and `/apps/shared/*` are redirected to `/?returnTo=<target>` (magic-code sign-in) rather than the WorkOS hosted UI; `lib/return-to.ts` provides the utilities for this
