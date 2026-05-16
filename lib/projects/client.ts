@@ -101,6 +101,37 @@ export class ProjectAlreadyExistsError extends Error {
 }
 
 /**
+ * Read a single file's contents from the project repo (UTF-8 only). Returns
+ * null on 404 — the file simply doesn't exist on that branch yet. Used to
+ * peek at `shmastra.json` before provisioning, without cloning anything.
+ *
+ * GitLab API: `GET /projects/:id/repository/files/<file_path>?ref=<branch>`
+ * — `file_path` is URL-encoded; for nested paths the slashes are encoded
+ * too. Response body has `content` as base64.
+ */
+export async function getFileContent(
+  projectId: number,
+  filePath: string,
+  ref: string,
+): Promise<string | null> {
+  const encodedPath = encodeURIComponent(filePath);
+  const res = await gitlabFetch(
+    "GET",
+    `/projects/${projectId}/repository/files/${encodedPath}?ref=${encodeURIComponent(ref)}`,
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`GitLab getFileContent ${res.status}: ${await readError(res)}`);
+  }
+  const body = (await res.json()) as { content?: string; encoding?: string };
+  if (!body.content) return null;
+  if (body.encoding && body.encoding !== "base64") {
+    throw new Error(`Unexpected file encoding from GitLab: ${body.encoding}`);
+  }
+  return Buffer.from(body.content, "base64").toString("utf-8");
+}
+
+/**
  * Build the URL the git-proxy uses to forward to GitLab Smart HTTP.
  * GitLab Smart HTTP lives at `<git_url>/info/refs` (without `.git` is also
  * accepted, but we keep it consistent with what `git clone` produces).

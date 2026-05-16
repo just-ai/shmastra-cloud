@@ -125,7 +125,44 @@ async function ensureSandboxAppRunning(
   return sandboxHost;
 }
 
-async function provisionSandbox(userId: string) {
+export interface ProvisionOptions {
+  /**
+   * Values for `.env` variables, keyed by name, collected from the restore
+   * form. Written verbatim to /home/user/shmastra/.env before the project
+   * remote merge, so the recovered app starts with its expected secrets.
+   *
+   * Never logged or persisted server-side. Lives in memory for the duration
+   * of one provisionSandbox call and is discarded after the file write.
+   */
+  envValues?: Record<string, string>;
+}
+
+function buildDotenv(envValues: Record<string, string>): string {
+  // Plain `KEY=value`, one per line. Values containing newlines or special
+  // characters are minimally escaped — we wrap in double quotes and escape
+  // backslashes / quotes / newlines so the standard dotenv parsers used by
+  // both pnpm dev and node --env-file accept them.
+  const lines: string[] = [];
+  for (const [rawKey, rawValue] of Object.entries(envValues)) {
+    const key = rawKey.trim();
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) continue;
+    const value = rawValue ?? "";
+    const needsQuoting = /[\s"'\\#$`]/.test(value) || value === "";
+    if (!needsQuoting) {
+      lines.push(`${key}=${value}`);
+    } else {
+      const escaped = value
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "\\r");
+      lines.push(`${key}="${escaped}"`);
+    }
+  }
+  return lines.join("\n") + (lines.length ? "\n" : "");
+}
+
+async function provisionSandbox(userId: string, opts: ProvisionOptions = {}) {
   const appUrl = getAppUrl();
 
   try {
@@ -214,6 +251,23 @@ async function provisionSandbox(userId: string) {
       console.error(`Failed to write skills for sandbox ${sandbox.sandboxId}:`, err);
     }
 
+    // Write user-supplied `.env` BEFORE the merge so the recovered app
+    // starts with its expected secrets. Form values come from the restore
+    // page (§7 of the implementation plan) and are held only in memory —
+    // never logged, never persisted in Supabase. Values intentionally not
+    // included in the surrounding console.log statements.
+    if (opts.envValues && Object.keys(opts.envValues).length > 0) {
+      const body = buildDotenv(opts.envValues);
+      try {
+        await sandbox.files.write("/home/user/shmastra/.env", body, {
+          user: "user",
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to write .env: ${message}`);
+      }
+    }
+
     // Sync is mandatory whenever the provider is configured: without the
     // project remote wired up and (if the user has prior work) restored,
     // "ready" would mean a sandbox silently diverging from the user's
@@ -242,13 +296,16 @@ async function provisionSandbox(userId: string) {
   }
 }
 
-export async function ensureSandboxForUser(userId: string) {
+export async function ensureSandboxForUser(
+  userId: string,
+  opts: ProvisionOptions = {},
+) {
   const sandbox = await getSandbox(userId);
   if (sandbox) {
     if (sandbox.status === "error") {
       const retryingSandbox = await claimSandboxRetry(userId);
       if (retryingSandbox) {
-        void provisionSandbox(userId);
+        void provisionSandbox(userId, opts);
         return retryingSandbox;
       }
 
@@ -260,14 +317,17 @@ export async function ensureSandboxForUser(userId: string) {
 
   const result = await createSandboxRecord(userId);
   if (result.created) {
-    void provisionSandbox(userId);
+    void provisionSandbox(userId, opts);
   }
   return result.sandbox;
 }
 
-export async function retrySandboxForUser(userId: string) {
+export async function retrySandboxForUser(
+  userId: string,
+  opts: ProvisionOptions = {},
+) {
   await markSandboxCreating(userId);
-  await provisionSandbox(userId);
+  await provisionSandbox(userId, opts);
 }
 
 export async function getSandboxForUser(userId: string) {

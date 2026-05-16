@@ -10,12 +10,15 @@
 // the update and `pm2 start project-watcher` in `finally`. We don't read
 // any sentinel files.
 
-import { watch, existsSync } from "node:fs";
+import { watch, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 
 const REPO = "/home/user/shmastra";
 const DEBOUNCE_MS = 3_000;
 const MAX_FILES_IN_MESSAGE = 5;
+const MANIFEST_PATH = `${REPO}/shmastra.json`;
+const ENV_PATH = `${REPO}/.env`;
+const ENV_KEY_RE = /^\s*([A-Z_][A-Z0-9_]*)\s*=/;
 
 // A path is ignored if any of these patterns matches the relative path or
 // any of its segments.
@@ -53,9 +56,38 @@ function buildMessage(): string {
   return `Edit ${shown}${more} — ${timestamp()}`;
 }
 
+// Always-on side effect of a push: rewrite shmastra.json (tracked) with the
+// current names of variables found in .env (gitignored). Names — not values
+// — so a fresh sandbox knows which secrets to ask the user about before
+// merging the saved code over the template.
+function regenerateManifest(): void {
+  let envVars: string[] = [];
+  if (existsSync(ENV_PATH)) {
+    const lines = readFileSync(ENV_PATH, "utf-8").split("\n");
+    const seen = new Set<string>();
+    for (const line of lines) {
+      const m = line.match(ENV_KEY_RE);
+      if (m && !seen.has(m[1])) {
+        seen.add(m[1]);
+        envVars.push(m[1]);
+      }
+    }
+  }
+  const body = JSON.stringify({ version: 1, env: envVars }, null, 2) + "\n";
+  writeFileSync(MANIFEST_PATH, body);
+}
+
 function push(): void {
   timer = null;
   if (pending.size === 0) return;
+  try {
+    regenerateManifest();
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`manifest regen failed: ${message}`);
+    // continue; missing manifest only hurts restore-flow on a *future*
+    // sandbox, not this push.
+  }
   const msg = buildMessage().replace(/"/g, '\\"');
   try {
     // `git diff --cached --quiet` exits 1 when there ARE changes, so we
