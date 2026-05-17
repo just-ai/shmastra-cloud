@@ -108,7 +108,7 @@ export function PM2LogsTab({ selected, pm2Logs, pm2Process, setPm2Process, pm2Lo
         borderBottom: "1px solid var(--border)",
       },
     },
-      ...["shmastra", "healer"].map((proc) =>
+      ...["shmastra", "healer", "watcher"].map((proc) =>
         h("button", {
           key: proc,
           onClick: () => { setPm2Process(proc); fetchPm2Logs(selected, proc); },

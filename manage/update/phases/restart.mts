@@ -5,6 +5,7 @@ import { ensurePm2Running, type PhaseCtx } from "./shared.mjs";
 
 const BOOTSTRAP_FILES: Array<{ local: string; remote: string; executable?: boolean }> = [
   { local: "../../../scripts/sandbox/healer.mts", remote: "/home/user/healer.mts" },
+  { local: "../../../scripts/sandbox/project-watcher.sh", remote: "/home/user/project-watcher.sh", executable: true },
   { local: "../../../scripts/sandbox/ecosystem.config.cjs", remote: "/home/user/ecosystem.config.cjs" },
   { local: "../../../scripts/sandbox/start.sh", remote: "/home/user/start.sh", executable: true },
 ];

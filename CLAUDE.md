@@ -45,9 +45,17 @@ Browser → Next.js middleware (WorkOS auth + org check)
 
 Sandboxes never see real API keys. Instead they get `vk_<userId>_<hex>` tokens. The Edge gateway (`/api/gateway/*`) resolves virtual keys back to real keys from env vars before proxying to OpenAI/Anthropic/Google/Composio.
 
+### Project auto-sync
+
+Each user gets a persistent provider git repo (currently GitLab) at provision time. A daemon in the sandbox (`project-watcher`) commits and pushes file edits to that repo on every change. The sandbox is ephemeral; the repo isn't — when a sandbox is deleted, the next one for the same user merges its prior work back over the fresh template.
+
+The sandbox never sees the GitLab service token. Pushes go through `/api/git/[...path]` which unwraps a per-user `PROJECT_TOKEN` (column on `users`, similar to `virtual_key`) and forwards to GitLab with the service token (server-side env). Provider specifics live in `lib/projects/client.ts`; the rest of the code talks to `lib/projects/repo.ts` and uses generic column names.
+
+Update-pipeline coordination: `pm2 stop project-watcher` at the start of an update (so its `git add -A` doesn't race fetchPhase), then the final `sync` phase pushes the merged result, then `pm2 start` in `finally` re-arms the watcher.
+
 ### Database (Supabase)
 
-Tables: `users` (includes `virtual_key` column), `sandboxes` (1:1 with users).
+Tables: `users` (includes `virtual_key` and `project_token` columns), `sandboxes` (1:1 with users), `projects` (per-user provider repo metadata).
 View: `user_sandboxes` (join for admin queries).
 Migrations in `supabase/migrations/`.
 
@@ -122,6 +130,7 @@ Required in `.env.local`:
 - `E2B_API_KEY`
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
 - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `COMPOSIO_API_KEY`
+- `GITLAB_SERVICE_TOKEN` (admin PAT, scope: api+write_repository), `GITLAB_GROUP_ID` (numeric id of the parent group), `GITLAB_API_URL` (default `https://gitlab.com/api/v4`) — required to enable project auto-sync. Absence disables the feature; sandboxes still provision but without sync.
 
 ## Important notes
 
