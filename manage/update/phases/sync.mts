@@ -1,18 +1,21 @@
 import { run } from "../../sandbox.mjs";
 import { supabase } from "../../env.mjs";
 import { MAIN_DIR, SkipPhase, type PhaseCtx } from "./shared.mjs";
-// Static import (not dynamic). Works because `client.mts` is an `.mts`
-// source file — tsx's strict ESM resolver from `.mts` callers handles the
-// `.mjs` extension cleanly. The old dynamic-import workaround was needed
-// only because `client.ts` (legacy extension) didn't expose named exports
-// when statically imported from `.mts` callers.
-import {
-  createProject,
-  findProjectInGroupByPath,
-  getProject as providerGet,
-  ProjectAlreadyExistsError,
-  type ProviderProject,
-} from "../../../lib/projects/client.mjs";
+
+// Dynamic import of `client.ts` rather than a static one. Two reasons we
+// can't statically import:
+//   1. tsx's strict ESM resolver from `.mts` callers can't pull named
+//      exports out of legacy `.ts` source files (returns empty bindings).
+//   2. Renaming `client.ts → client.mts` to unblock #1 creates a
+//      dual-loader cycle when `repo.ts` is loaded as CJS (no
+//      `"type":"module"` in package.json) while `client.mts` is being
+//      imported as ESM elsewhere in the same process — Node 22's
+//      require(esm) cycle guard fires (ERR_REQUIRE_CYCLE_MODULE).
+// dynamic import() runs through tsx's runtime TS resolver, which handles
+// both extension cases without forcing the file into ESM.
+async function loadClient() {
+  return import("../../../lib/projects/client.js");
+}
 
 /** Mirrors `projectPathFor` in lib/projects/repo.ts. Kept in sync manually. */
 function projectPathFor(userId: string): string {
@@ -26,17 +29,16 @@ function projectPathFor(userId: string): string {
  * Returns `recreated: true` when a new project was created.
  *
  * This is the narrow subset of `ensureProjectForUser` (lib/projects/repo.ts)
- * that sync needs. Inlining it here avoids a dynamic import workaround:
- * `repo.ts` reaches `@/lib/db` and a relative `./client`, and tsx's static
- * ESM resolver from `.mts` was tripping over those (see
- * https://github.com/privatenumber/tsx — extensionless + alias under .mts).
- * `client.ts` is a leaf with no imports of its own, so static import works.
+ * that sync needs. Inlining keeps the alias-chain (`@/lib/db` → repo.ts →
+ * client.ts) out of the manage-side `.mts` import graph and avoids the
+ * dual-loader cycle described above.
  */
 async function validateOrRecreateProject(
   userId: string,
   projectId: number,
-): Promise<{ recreated: boolean; project?: ProviderProject }> {
-  const live = await providerGet(projectId);
+): Promise<{ recreated: boolean }> {
+  const client = await loadClient();
+  const live = await client.getProject(projectId);
   if (live) return { recreated: false };
 
   // Upstream is gone — drop the stale row before we try to insert a new one.
@@ -44,13 +46,13 @@ async function validateOrRecreateProject(
   await supabase.from("projects").delete().eq("user_id", userId);
 
   const slug = projectPathFor(userId);
-  let providerProject: ProviderProject;
+  let providerProject;
   try {
-    providerProject = await createProject(slug, slug);
+    providerProject = await client.createProject(slug, slug);
   } catch (err) {
-    if (!(err instanceof ProjectAlreadyExistsError)) throw err;
+    if (!(err instanceof client.ProjectAlreadyExistsError)) throw err;
     // Provider has it but DB lost the row — adopt the existing project.
-    const found = await findProjectInGroupByPath(slug);
+    const found = await client.findProjectInGroupByPath(slug);
     if (!found) throw err;
     providerProject = found;
   }
@@ -61,7 +63,7 @@ async function validateOrRecreateProject(
     git_url: providerProject.httpUrl,
   });
 
-  return { recreated: true, project: providerProject };
+  return { recreated: true };
 }
 
 /**
