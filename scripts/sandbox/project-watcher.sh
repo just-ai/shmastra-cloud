@@ -40,7 +40,12 @@ log() {
 regenerate_manifest() {
   local keys="[]"
   if [ -f "$ENV_FILE" ]; then
-    keys=$(awk -F= '/^[A-Z_][A-Z0-9_]*[[:space:]]*=/ {print $1}' "$ENV_FILE" \
+    # awk's `-F=` splits on `=`, so `FOO_BAR = 1` puts `FOO_BAR ` (with
+    # trailing space) into $1. Strip trailing whitespace before emitting,
+    # otherwise the manifest carries `"FOO_BAR "` which never matches the
+    # restore form's `FOO_BAR` field. Mirrors the Node version's
+    # `^\s*([A-Z_][A-Z0-9_]*)\s*=` capture-group semantics.
+    keys=$(awk -F= '/^[A-Z_][A-Z0-9_]*[[:space:]]*=/ { sub(/[[:space:]]+$/, "", $1); print $1 }' "$ENV_FILE" \
            | awk '!seen[$0]++' \
            | jq -R . | jq -s .)
   fi
@@ -79,15 +84,22 @@ push_changes() {
   fi
 }
 
-# Pull the list of ignored directory paths from git itself and translate
-# them into inotifywait @<path> exclusions. `--directory --ignored
-# --exclude-standard` collapses each ignored subtree to a single trailing-
-# slash entry, so we don't enumerate every individual file inside.
+# Pull the list of ignored paths from git itself and translate them into
+# inotifywait @<path> exclusions. `--directory --ignored --exclude-standard`
+# collapses each ignored subtree to a single trailing-slash entry, so we
+# don't enumerate every individual file inside, but it still emits
+# individual file paths for ignored files that aren't inside an ignored
+# subtree (e.g. `*.log` in src/). We exclude both — file-level exclusions
+# stop inotify from firing wake-ups on writes that `git add -A` would
+# skip anyway. Only currently-existing gitignored files are enumerated;
+# future ones still trigger no-op events, but the .gitignore mtime check
+# in the main loop re-arms us with refreshed excludes when patterns
+# themselves change.
 compute_excludes() {
   local excludes=""
   local p
   while IFS= read -r p; do
-    [[ "$p" == */ ]] || continue
+    [ -z "$p" ] && continue
     p="${p%/}"
     excludes+=" @$REPO/$p"
   done < <(git -C "$REPO" ls-files --others --directory --ignored --exclude-standard 2>/dev/null)

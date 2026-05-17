@@ -15,7 +15,7 @@ import {
   getProject as providerGet,
   getFileContent as providerGetFile,
   ProjectAlreadyExistsError,
-} from "./client";
+} from "./client.mjs";
 
 export interface ProjectManifest {
   version: number;

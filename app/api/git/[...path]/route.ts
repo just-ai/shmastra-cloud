@@ -9,7 +9,7 @@
 import { NextRequest } from "next/server";
 import { resolveProjectToken } from "@/lib/virtual-keys";
 import { getProjectForUser } from "@/lib/projects";
-import { smartHttpAuthHeader, smartHttpUrl } from "@/lib/projects/client";
+import { smartHttpAuthHeader, smartHttpUrl } from "@/lib/projects/client.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

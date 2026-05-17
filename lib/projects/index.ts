@@ -6,4 +6,4 @@ export {
   type EnsureResult,
   type ProjectManifest,
 } from "./repo";
-export { smartHttpUrl, smartHttpAuthHeader } from "./client";
+export { smartHttpUrl, smartHttpAuthHeader } from "./client.mjs";

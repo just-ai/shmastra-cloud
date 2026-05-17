@@ -8,13 +8,17 @@ const nextConfig: NextConfig = {
     // Trace the file so Vercel ships it with the serverless bundle.
     // lib/project-bootstrap.ts spawns `manage/resolve-merge.mts` via tsx
     // on merge conflict — include the manage sources, the script entry,
-    // and the tsx binary so the serverless function can launch it.
+    // the tsx binary, and tsconfig.json so the child process can resolve
+    // path aliases (`@/lib/...`) when loading transitive imports from
+    // `lib/projects/repo.ts` and friends. Without tsconfig in the trace
+    // the child silently fails to resolve `@/lib/db`.
     "/**": [
       "./lib/skills/**/*.md",
       "./manage/**/*.mts",
       "./manage/**/*.mjs",
       "./node_modules/tsx/**",
       "./node_modules/.bin/tsx",
+      "./tsconfig.json",
     ],
   },
   env: {
