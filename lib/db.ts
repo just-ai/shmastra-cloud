@@ -157,6 +157,11 @@ export async function touchProject(userId: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function deleteProject(userId: string): Promise<void> {
+  const { error } = await db().from("projects").delete().eq("user_id", userId);
+  if (error) throw error;
+}
+
 // --- Sandboxes ---
 
 export async function getSandbox(userId: string) {

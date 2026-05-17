@@ -142,12 +142,19 @@ function buildDotenv(envValues: Record<string, string>): string {
   // characters are minimally escaped — we wrap in double quotes and escape
   // backslashes / quotes / newlines so the standard dotenv parsers used by
   // both pnpm dev and node --env-file accept them.
+  //
+  // Blank values from the restore form are dropped entirely (no `KEY=""`
+  // line). Writing an empty key would shadow whatever default the app may
+  // have for that variable; leaving it absent lets the app fall back to
+  // its own logic, which matches what a user who left the field blank
+  // probably intended.
   const lines: string[] = [];
   for (const [rawKey, rawValue] of Object.entries(envValues)) {
     const key = rawKey.trim();
     if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) continue;
     const value = rawValue ?? "";
-    const needsQuoting = /[\s"'\\#$`]/.test(value) || value === "";
+    if (value === "") continue;
+    const needsQuoting = /[\s"'\\#$`]/.test(value);
     if (!needsQuoting) {
       lines.push(`${key}=${value}`);
     } else {

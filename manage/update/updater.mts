@@ -58,7 +58,7 @@ export async function updateSandbox(
 
   // Pause project-watcher so its `git add -A && git commit` doesn't race
   // with fetchPhase's same commands, and so its push to `project/main`
-  // doesn't interleave with the control push we do in project-sync at the
+  // doesn't interleave with the control push we do in the sync phase at the
   // end. `|| true` handles the case where the watcher isn't installed yet
   // (old sandbox before the back-fill patch runs).
   await run(sandbox, `pm2 stop project-watcher 2>/dev/null || true`, log, {

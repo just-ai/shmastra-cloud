@@ -6,7 +6,7 @@ import { applyPhase } from "./apply.mjs";
 import { migratePhase } from "./migrate.mjs";
 import { patchPhase } from "./patch.mjs";
 import { restartPhase } from "./restart.mjs";
-import { projectSyncPhase } from "./project-sync.mjs";
+import { syncPhase } from "./sync.mjs";
 import type { PhaseFn } from "./shared.mjs";
 
 // Single source of truth for phase order + implementation. Edit here to add,
@@ -21,7 +21,7 @@ export const UPDATE_PIPELINE: ReadonlyArray<{ name: string; fn: PhaseFn }> = [
   { name: "apply", fn: applyPhase },
   { name: "patch", fn: patchPhase },
   { name: "restart", fn: restartPhase },
-  { name: "project-sync", fn: projectSyncPhase },
+  { name: "sync", fn: syncPhase },
 ] as const;
 
 export const UPDATE_PHASES = UPDATE_PIPELINE.map((p) => p.name) as unknown as ReadonlyArray<string>;

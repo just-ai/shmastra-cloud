@@ -75,7 +75,7 @@ export function RestoreProjectForm({ envKeys, returnTo }: Props) {
                   {key}
                 </span>
                 <input
-                  type="password"
+                  type="text"
                   autoComplete="off"
                   spellCheck={false}
                   value={values[key] ?? ""}
@@ -91,18 +91,13 @@ export function RestoreProjectForm({ envKeys, returnTo }: Props) {
               </pre>
             )}
 
-            <div className="mt-2 flex items-center gap-3">
-              <button
-                type="submit"
-                disabled={submitting}
-                className="rounded-md border border-[var(--panel-border-strong)] bg-[var(--accent-soft)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.34em] text-[var(--accent)] transition hover:bg-[color-mix(in_srgb,var(--accent)_24%,transparent)] disabled:opacity-50"
-              >
-                {submitting ? "restoring…" : "restore project"}
-              </button>
-              {submitting && (
-                <span className="status-dot h-1.5 w-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_16px_rgba(135,247,166,0.7)]" />
-              )}
-            </div>
+            <button
+              type="submit"
+              disabled={submitting}
+              className={`mt-2 self-start rounded-md border border-[var(--panel-border-strong)] bg-[var(--accent-soft)] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.22em] transition hover:bg-[color-mix(in_srgb,var(--accent)_24%,transparent)] disabled:cursor-not-allowed ${submitting ? "shimmer-text" : "text-[var(--accent)]"}`}
+            >
+              {submitting ? "restoring…" : "restore"}
+            </button>
           </form>
         </div>
       </section>

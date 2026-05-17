@@ -10,10 +10,9 @@ ln -sf /home/user/shmastra/node_modules /home/user/node_modules
   --external:pm2 \
   --outfile=/home/user/healer.cjs
 
-# Compile project-watcher.mts → project-watcher.cjs (same pattern)
-/home/user/shmastra/node_modules/.bin/esbuild /home/user/project-watcher.mts \
-  --bundle --platform=node --format=cjs --target=node20 \
-  --outfile=/home/user/project-watcher.cjs
+# project-watcher is a bash script — no bundling step. It runs inotifywait
+# (apt: inotify-tools) and uses git's own gitignore knowledge to compute
+# excludes; see project-watcher.sh.
 
 # Configure pm2-logrotate by writing module_conf.json directly. Cheaper and
 # safer than three `pm2 set` calls — each of those forks a node CLI and

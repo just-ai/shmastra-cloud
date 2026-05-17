@@ -36,12 +36,14 @@ module.exports = {
       max_restarts: 1,
       min_uptime: 10000,
       restart_delay: 2000,
+      max_memory_restart: "3800M",
       out_file: "/home/user/shmastra/.logs/shmastra.log",
       error_file: "/home/user/shmastra/.logs/shmastra.log",
       merge_logs: true,
       env: {
         ...daemonEnv,
         SHMASTRA_WORKDIR_HOME: "/home/user/workdir",
+        NODE_OPTIONS: "--max-old-space-size=3400",
       },
     },
     {
@@ -56,10 +58,13 @@ module.exports = {
     },
     {
       // Auto-commits and pushes the user's edits to their project repo via
-      // the cloud's git-proxy. Paused by update-pipeline via `pm2 stop`
+      // the cloud's git proxy. Paused by update-pipeline via `pm2 stop`
       // and resumed in `finally`; see manage/update/updater.mts.
       name: "project-watcher",
-      script: "/home/user/project-watcher.cjs",
+      script: "/home/user/project-watcher.sh",
+      // PM2 defaults `interpreter` to "node" when not set — explicit
+      // override so it honors the shebang and runs bash directly.
+      interpreter: "/bin/bash",
       cwd: "/home/user/shmastra",
       autorestart: true,
       max_restarts: 5,

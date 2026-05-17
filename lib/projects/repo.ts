@@ -5,11 +5,14 @@
 import {
   getProject as dbGetProject,
   upsertProject,
+  deleteProject as dbDeleteProject,
   markProjectError as dbMarkProjectError,
   type Project,
 } from "@/lib/db";
 import {
   createProject as providerCreate,
+  findProjectInGroupByPath as providerFindInGroup,
+  getProject as providerGet,
   getFileContent as providerGetFile,
   ProjectAlreadyExistsError,
 } from "./client";
@@ -29,7 +32,7 @@ function projectPathFor(userId: string): string {
 }
 
 function projectNameFor(userId: string): string {
-  return `Shmastra user ${userId.slice(0, 8)}`;
+  return projectPathFor(userId);
 }
 
 export interface EnsureResult {
@@ -39,15 +42,27 @@ export interface EnsureResult {
 }
 
 /**
- * Ensure there is a project row + provider repo for the user. Idempotent:
- * concurrent calls collapse to one row via the unique constraint on user_id.
- * On a rare provider-side collision with no matching DB row (e.g. Supabase
- * data wiped but GitLab projects retained) the error surfaces — that's an
- * admin recovery case, not a normal runtime path.
+ * Ensure there is a project row + provider repo for the user. Idempotent on
+ * four axes:
+ *   - DB has row → validate it still exists upstream; return it on hit.
+ *   - DB row points at a deleted upstream project → drop the row and fall
+ *     through to creation. The sandbox's `project` remote URL doesn't
+ *     encode the project id (it goes through our proxy), so recreation
+ *     auto-recovers without touching the sandbox.
+ *   - Concurrent callers collapse via the unique constraint on user_id.
+ *   - Provider has the project but DB row is missing (patch script crashed
+ *     between create and insert, or DB got rolled back): recover by looking
+ *     the project up by its deterministic path and inserting the DB row.
  */
 export async function ensureProjectForUser(userId: string): Promise<EnsureResult> {
   const existing = await dbGetProject(userId);
-  if (existing) return { project: existing, created: false };
+  if (existing) {
+    const live = await providerGet(existing.project_id);
+    if (live) return { project: existing, created: false };
+    // Upstream is gone (admin/user deleted the GitLab project). Drop the
+    // stale row so we recreate below.
+    await dbDeleteProject(userId);
+  }
 
   const path = projectPathFor(userId);
   const name = projectNameFor(userId);
@@ -56,13 +71,16 @@ export async function ensureProjectForUser(userId: string): Promise<EnsureResult
   try {
     providerProject = await providerCreate(name, path);
   } catch (err) {
-    if (err instanceof ProjectAlreadyExistsError) {
-      // Almost always: another concurrent provisioning beat us to the
-      // create; their row should be visible now.
-      const raced = await dbGetProject(userId);
-      if (raced) return { project: raced, created: false };
-    }
-    throw err;
+    if (!(err instanceof ProjectAlreadyExistsError)) throw err;
+    // Concurrent caller won the race — their DB row should be visible now.
+    const raced = await dbGetProject(userId);
+    if (raced) return { project: raced, created: false };
+    // Otherwise the project exists in the provider but not in our DB
+    // (patch crashed between create and insert, or DB row was wiped).
+    // Adopt it: look it up in our group by deterministic slug.
+    const found = await providerFindInGroup(path);
+    if (!found) throw err;
+    providerProject = found;
   }
 
   const { row, inserted } = await upsertProject({

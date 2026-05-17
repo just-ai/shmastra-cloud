@@ -1,6 +1,6 @@
 // Git Smart HTTP proxy.
 //
-// Sandbox configures `git remote add project https://x-token:<PROJECT_TOKEN>@<cloud-host>/api/git-proxy/repo.git`
+// Sandbox configures `git remote add project https://x-token:<PROJECT_TOKEN>@<cloud-host>/api/git/repo.git`
 // and pushes/fetches against it. We unwrap the Basic auth, look up the
 // user's project, and forward the request to the upstream provider
 // (currently GitLab) with the service token. The sandbox never sees the
@@ -29,10 +29,18 @@ const HOP_HEADERS = new Set([
   "content-length",
 ]);
 
+// Response headers we must strip in addition to hop-by-hop: undici's `fetch`
+// transparently decompresses the upstream body, so forwarding the original
+// `content-encoding: gzip` to the git client makes it try to inflate plain
+// bytes ("incorrect header check"). `content-length` also no longer matches
+// the post-decompression byte count, so drop it and let the runtime
+// re-derive via chunked transfer.
+const RESPONSE_STRIP = new Set(["content-encoding", "content-length"]);
+
 function unauthorized(): Response {
   return new Response("Unauthorized", {
     status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="git-proxy"' },
+    headers: { "WWW-Authenticate": 'Basic realm="git"' },
   });
 }
 
@@ -62,12 +70,12 @@ async function handle(request: NextRequest): Promise<Response> {
     return new Response("No project for user", { status: 404 });
   }
 
-  // The incoming path is `/api/git-proxy/<...>` where the `<...>` part is
+  // The incoming path is `/api/git/<...>` where the `<...>` part is
   // git's protocol tail (e.g. `repo.git/info/refs` or `repo.git/git-receive-pack`).
   // GitLab's smart HTTP lives at `<git_url>/info/refs` etc., so we strip the
   // `repo.git/` prefix and append the remainder to the upstream base.
   const url = new URL(request.url);
-  const match = url.pathname.match(/^\/api\/git-proxy\/([^/]+)(\/.*)?$/);
+  const match = url.pathname.match(/^\/api\/git\/([^/]+)(\/.*)?$/);
   if (!match) return new Response("Not found", { status: 404 });
   const tail = match[2] ?? "";
 
@@ -98,7 +106,9 @@ async function handle(request: NextRequest): Promise<Response> {
 
   const respHeaders = new Headers();
   for (const [name, value] of upstreamRes.headers) {
-    if (!HOP_HEADERS.has(name.toLowerCase())) respHeaders.set(name, value);
+    const lower = name.toLowerCase();
+    if (HOP_HEADERS.has(lower) || RESPONSE_STRIP.has(lower)) continue;
+    respHeaders.set(name, value);
   }
   return new Response(upstreamRes.body, {
     status: upstreamRes.status,

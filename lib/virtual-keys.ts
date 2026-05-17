@@ -39,7 +39,7 @@ export function getVirtualKey(user: { id: string; virtual_key?: string | null })
 
 /**
  * Resolve a per-user PROJECT_TOKEN (format `pjt_<userId>_<hex>`) to its
- * owning user id. Used by the git-proxy to authenticate the sandbox before
+ * owning user id. Used by the git proxy to authenticate the sandbox before
  * forwarding to the provider.
  */
 export async function resolveProjectToken(token: string): Promise<{ userId: string } | null> {

@@ -66,11 +66,44 @@ export async function findProjectByPath(pathWithNamespace: string): Promise<Prov
   return toProject(await res.json());
 }
 
+/**
+ * Find a project by its `path` slug (not full path-with-namespace). Used to
+ * recover when GitLab has the project but our DB row is missing: we know
+ * the slug deterministically.
+ *
+ * Uses the global /projects?search=&membership=true endpoint instead of
+ * /groups/:id/projects because the latter requires Reporter+ on the group
+ * itself, which our service token doesn't always have (it may only have
+ * project-creation rights via the namespace).
+ */
+export async function findProjectInGroupByPath(slug: string): Promise<ProviderProject | null> {
+  const gid = groupId();
+  const res = await gitlabFetch(
+    "GET",
+    `/projects?search=${encodeURIComponent(slug)}&membership=true&per_page=100`,
+  );
+  if (!res.ok) throw new Error(`GitLab searchProjects ${res.status}: ${await readError(res)}`);
+  const list = (await res.json()) as Array<Record<string, unknown>>;
+  const match = list.find((p) => {
+    if (p.path !== slug) return false;
+    const ns = p.namespace as { id?: number } | undefined;
+    return ns?.id === gid;
+  });
+  return match ? toProject(match) : null;
+}
+
 export async function getProject(projectId: number): Promise<ProviderProject | null> {
   const res = await gitlabFetch("GET", `/projects/${projectId}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GitLab getProject ${res.status}: ${await readError(res)}`);
-  return toProject(await res.json());
+  const raw = (await res.json()) as Record<string, unknown>;
+  // Soft-deleted projects (7-day GitLab purge window) keep returning 200
+  // from /projects/:id but their path is suffixed `-deletion_scheduled-<id>`,
+  // service-account access is revoked, and `marked_for_deletion_at` is set.
+  // Treat them as gone so callers recreate a fresh project instead of
+  // trying to push to a tombstone (which 403s).
+  if (raw.marked_for_deletion_at || raw.marked_for_deletion_on) return null;
+  return toProject(raw);
 }
 
 export async function createProject(name: string, path: string): Promise<ProviderProject> {
@@ -82,15 +115,18 @@ export async function createProject(name: string, path: string): Promise<Provide
     initialize_with_readme: false,
     default_branch: "main",
   });
-  if (res.status === 400 || res.status === 409) {
-    // Path already taken — the caller's `ensureProjectForUser` will then
-    // fall back to findProjectByPath. Return null-ish by throwing with a
-    // recognisable tag so the caller decides whether to re-query.
-    const body = await readError(res);
+  if (res.ok) return toProject(await res.json());
+
+  const body = await readError(res);
+  // GitLab returns 400 with `path: has already been taken` (or
+  // `project_namespace.name: has already been taken`) when the slug
+  // collides. Other 400s — most commonly `namespace: is not valid` when
+  // the service token lacks rights on the group — are not idempotency
+  // signals and must surface as fatal errors.
+  if ((res.status === 400 || res.status === 409) && /has already been taken/i.test(body)) {
     throw new ProjectAlreadyExistsError(body);
   }
-  if (!res.ok) throw new Error(`GitLab createProject ${res.status}: ${await readError(res)}`);
-  return toProject(await res.json());
+  throw new Error(`GitLab createProject ${res.status}: ${body}`);
 }
 
 export class ProjectAlreadyExistsError extends Error {
@@ -132,7 +168,7 @@ export async function getFileContent(
 }
 
 /**
- * Build the URL the git-proxy uses to forward to GitLab Smart HTTP.
+ * Build the URL the git proxy uses to forward to GitLab Smart HTTP.
  * GitLab Smart HTTP lives at `<git_url>/info/refs` (without `.git` is also
  * accepted, but we keep it consistent with what `git clone` produces).
  */

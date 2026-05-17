@@ -7,12 +7,17 @@
 //   4. If the project already had pushes (older sandbox state), merge
 //      them onto the current main with the same conflict resolver the
 //      update pipeline uses.
+//   5. Install inotify-tools and jq — project-watcher.sh needs both. Fresh
+//      sandboxes get them from the template's aptInstall, but existing
+//      sandboxes were provisioned before those packages were in the
+//      template's apt list.
 //
 // The watcher itself is delivered via BOOTSTRAP_FILES + ecosystem.config.cjs
 // in the same update — restartPhase picks it up after this patch runs.
 //
 // Idempotent: re-running is a no-op (DB row already exists, remote is
-// already set, env addition is overwriting with the same value).
+// already set, env addition is overwriting with the same value, apt-get
+// install is a no-op when packages are already present).
 
 import type { UpdateContext } from "@/manage/update/runner.mjs";
 import { addDaemonEnvs } from "@/manage/update/utils.mjs";
@@ -36,4 +41,10 @@ export default async function (ctx: UpdateContext) {
   await setupProjectRemote(ctx.sandbox, proxyUrl, !created);
 
   addDaemonEnvs(ctx, ({ user }) => ({ PROJECT_TOKEN: user.project_token }));
+
+  await ctx.run(
+    `sudo apt-get install -y --no-install-recommends inotify-tools jq`,
+    { timeoutMs: 180_000 },
+  );
+  ctx.log("inotify-tools + jq installed");
 }

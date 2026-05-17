@@ -5,6 +5,7 @@ const LOG_DIR = "/home/user/shmastra/.logs";
 const LOG_FILES: Record<string, string> = {
   shmastra: `${LOG_DIR}/shmastra.log`,
   healer:   `${LOG_DIR}/healer.log`,
+  watcher:  `${LOG_DIR}/project-watcher.log`,
 };
 
 export async function handleLogs(req: Request, res: Response) {
