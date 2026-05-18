@@ -34,9 +34,9 @@ log() {
 }
 
 # Rewrite the tracked manifest with the current set of env var names
-# (names only — never values; .env itself is gitignored). Idempotent: if
-# .env contents haven't changed, the new file is byte-identical to the
-# previous one and git sees no diff.
+# (names only — never values; .env itself is gitignored). Only touches
+# the file when its contents would actually change, so mtime stays put
+# on no-op runs.
 regenerate_manifest() {
   local keys="[]"
   if [ -f "$ENV_FILE" ]; then
@@ -49,7 +49,12 @@ regenerate_manifest() {
            | awk '!seen[$0]++' \
            | jq -R . | jq -s .)
   fi
-  printf '{\n  "version": 1,\n  "env": %s\n}\n' "$keys" > "$MANIFEST"
+  local new
+  new=$(printf '{\n  "version": 1,\n  "env": %s\n}\n' "$keys")
+  if [ -f "$MANIFEST" ] && [ "$(cat "$MANIFEST")" = "$new" ]; then
+    return
+  fi
+  printf '%s' "$new" > "$MANIFEST"
 }
 
 push_changes() {
